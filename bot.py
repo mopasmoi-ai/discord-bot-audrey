@@ -1,13 +1,24 @@
 import os
 import asyncio
 import random
-import sqlite3
 import signal
 import sys
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
 import json
 import traceback
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+from threading import Thread
+from flask import Flask
+
+# Patch pour audioop sur Python 3.13
+try:
+    import audioop
+except ImportError:
+    class FakeAudioop:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+    sys.modules['audioop'] = FakeAudioop()
+    print("⚠️ Patch audioop appliqué pour Python 3.13")
 
 # Désactiver les warnings liés à l'audio
 os.environ['DISCORD_INSTALL_AUDIO_DEPS'] = '0'
@@ -21,7 +32,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.getenv('DISCORD_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+GEMINI_KEY = os.getenv('GEMINI_KEY')
 BOT_COLOR = int(os.getenv('BOT_COLOR', '2E8B57'), 16)
 
 # Log de démarrage
@@ -29,15 +40,15 @@ print("=" * 60)
 print("🔮 AUDREY HALL BOT - SOCIÉTÉ DES TAROTS")
 print("=" * 60)
 print(f"📅 Date: {datetime.now().strftime('%d %B %Y %H:%M')}")
-print(f"🎭 Version: Gemini 2.5 Flash Pro")
+print(f"🎭 Version: Gemini 2.5 Flash")
 print("=" * 60)
 
 if not TOKEN:
     print("❌ ERREUR: DISCORD_TOKEN manquant dans .env")
     sys.exit(1)
 
-if not GEMINI_API_KEY:
-    print("⚠️ ATTENTION: GEMINI_API_KEY manquant - mode hors-ligne activé")
+if not GEMINI_KEY:
+    print("⚠️ ATTENTION: GEMINI_KEY manquant - mode hors-ligne activé")
 else:
     print("✅ Clé Gemini chargée")
 
@@ -50,108 +61,84 @@ bot = commands.Bot(
         type=discord.ActivityType.listening,
         name="les murmures du destin"
     ),
-    status=discord.Status.idle
+    status=discord.Status.online
 )
 
-# ============ BASE DE DONNÉES OPTIMISÉE ============
+# ============ BASE DE DONNÉES JSON (plus fiable que SQLite) ============
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect('audrey_bot.db', check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.create_tables()
+        self.db_file = 'audrey_data.json'
+        self.data = self._load_data()
     
-    def create_tables(self):
-        cursor = self.conn.cursor()
-        
-        # Table utilisateurs
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                tarot_points INTEGER DEFAULT 0,
-                last_daily TIMESTAMP,
-                fortune_count INTEGER DEFAULT 0,
-                mystery_level INTEGER DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Table tarot readings
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS tarot_readings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                cards TEXT,
-                interpretation TEXT,
-                reading_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
-            )
-        ''')
-        
-        # Table conversations
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                user_message TEXT,
-                bot_response TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
-            )
-        ''')
-        
-        self.conn.commit()
-    
-    def get_or_create_user(self, user_id: int, username: str = "Inconnu"):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            'SELECT * FROM users WHERE user_id = ?', 
-            (user_id,)
-        )
-        row = cursor.fetchone()
-        
-        if row:
-            return dict(row)
-        else:
-            cursor.execute(
-                'INSERT INTO users (user_id, username) VALUES (?, ?)',
-                (user_id, username)
-            )
-            self.conn.commit()
+    def _load_data(self):
+        try:
+            with open(self.db_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
             return {
+                'users': {},
+                'tarot_readings': [],
+                'conversations': []
+            }
+    
+    def _save_data(self):
+        with open(self.db_file, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, ensure_ascii=False, indent=2)
+    
+    def get_user(self, user_id: int):
+        user_id_str = str(user_id)
+        
+        if user_id_str not in self.data['users']:
+            self.data['users'][user_id_str] = {
                 'user_id': user_id,
-                'username': username,
                 'tarot_points': 0,
                 'last_daily': None,
                 'fortune_count': 0,
-                'mystery_level': 1
+                'mystery_level': 1,
+                'created_at': datetime.now().isoformat()
             }
+            self._save_data()
+        
+        return self.data['users'][user_id_str]
     
-    def update_user_stats(self, user_id: int, points: int = 0, fortune: int = 0):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            UPDATE users 
-            SET tarot_points = tarot_points + ?,
-                fortune_count = fortune_count + ?
-            WHERE user_id = ?
-        ''', (points, fortune, user_id))
-        self.conn.commit()
+    def update_user(self, user_id: int, **kwargs):
+        user_id_str = str(user_id)
+        
+        if user_id_str in self.data['users']:
+            for key, value in kwargs.items():
+                if key in self.data['users'][user_id_str]:
+                    if key == 'tarot_points' or key == 'fortune_count':
+                        self.data['users'][user_id_str][key] += value
+                    else:
+                        self.data['users'][user_id_str][key] = value
+            self._save_data()
     
     def add_tarot_reading(self, user_id: int, cards: List[str], interpretation: str):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            'INSERT INTO tarot_readings (user_id, cards, interpretation) VALUES (?, ?, ?)',
-            (user_id, ','.join(cards), interpretation)
-        )
-        self.conn.commit()
+        self.data['tarot_readings'].append({
+            'user_id': user_id,
+            'cards': cards,
+            'interpretation': interpretation,
+            'reading_date': datetime.now().isoformat()
+        })
+        self._save_data()
     
     def add_conversation(self, user_id: int, user_message: str, bot_response: str):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            'INSERT INTO conversations (user_id, user_message, bot_response) VALUES (?, ?, ?)',
-            (user_id, user_message, bot_response[:500])  # Limite pour la base
-        )
-        self.conn.commit()
+        self.data['conversations'].append({
+            'user_id': user_id,
+            'user_message': user_message[:200],
+            'bot_response': bot_response[:200],
+            'timestamp': datetime.now().isoformat()
+        })
+        self._save_data()
+    
+    def get_user_readings(self, user_id: int, limit: int = 5):
+        readings = []
+        for reading in reversed(self.data['tarot_readings']):
+            if reading['user_id'] == user_id:
+                readings.append(reading)
+                if len(readings) >= limit:
+                    break
+        return readings
 
 db = Database()
 
@@ -243,7 +230,7 @@ class TarotDeck:
 
 tarot_deck = TarotDeck()
 
-# ============ AUDREY HALL AI AVEC GEMINI 2.5 FLASH PRO ============
+# ============ AUDREY HALL AI AVEC GEMINI 2.5 FLASH ============
 class AudreyHallAI:
     def __init__(self):
         self.model = None
@@ -277,19 +264,19 @@ class AudreyHallAI:
     
     def initialize_gemini(self):
         """Initialise Gemini avec configuration optimisée"""
-        if not GEMINI_API_KEY:
+        if not GEMINI_KEY:
             print("⚠️ Mode hors-ligne - Gemini non disponible")
             return
         
         try:
-            genai.configure(api_key=GEMINI_API_KEY)
+            genai.configure(api_key=GEMINI_KEY)
             
-            # Configuration pour Gemini 2.5 Flash Pro
+            # Configuration pour Gemini 2.5 Flash
             generation_config = {
-                "temperature": 0.85,  # Un peu créatif mais cohérent
+                "temperature": 0.85,
                 "top_p": 0.95,
                 "top_k": 40,
-                "max_output_tokens": 600,  # Réponses concises mais complètes
+                "max_output_tokens": 600,
             }
             
             safety_settings = [
@@ -311,18 +298,17 @@ class AudreyHallAI:
                 }
             ]
             
-            # Modèle Gemini 2.5 Flash (meilleur que chat)
+            # Utiliser gemini-1.5-flash qui est stable et disponible
             self.model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
+                model_name="gemini-1.5-flash",
                 generation_config=generation_config,
                 safety_settings=safety_settings
             )
             
             # Test de connexion
-            test_response = self.model.generate_content("Test - réponds par 'Connecté'")
+            test_response = self.model.generate_content("Test")
             if test_response.text:
-                print(f"✅ Gemini 2.5 Flash connecté")
-                print(f"   Modèle: {self.model.model_name}")
+                print(f"✅ Gemini connecté (modèle: gemini-1.5-flash)")
             else:
                 print("⚠️ Gemini connecté mais pas de réponse")
                 
@@ -389,7 +375,7 @@ class AudreyHallAI:
         
         try:
             # Génération avec Gemini
-            print(f"🧠 Génération avec Gemini 2.5 Flash...")
+            print(f"🧠 Génération avec Gemini...")
             response = await asyncio.to_thread(
                 self.model.generate_content,
                 context_prompt
@@ -404,7 +390,7 @@ class AudreyHallAI:
                 # Sauvegarde de la conversation
                 try:
                     db.add_conversation(
-                        user_id=hash(user_name) % 1000000,  # ID temporaire
+                        user_id=hash(user_name) % 1000000,
                         user_message=prompt[:200],
                         bot_response=final_response[:200]
                     )
@@ -424,43 +410,35 @@ class AudreyHallAI:
     def _build_context_prompt(self, prompt: str, user_name: str) -> str:
         """Construit un prompt contextuel riche pour Gemini"""
         
-        return f"""# IDENTITÉ COMPLÈTE
-Tu es Audrey Hall, Spectatrice de la Société des Tarots dans l'univers "Lord of the Mysteries".
+        return f"""Tu es Audrey Hall, Spectatrice de la Société des Tarots dans l'univers "Lord of the Mysteries".
 
-## TON PERSONNAGE
-- **Nom**: Audrey Hall
-- **Rôle**: Spectatrice (Séquence 7)
-- **Âge**: 18 ans d'apparence
-- **Caractère**: Élégante, mystérieuse, calculatrice, observatrice, intuitive
-- **Accessoires**: Lunettes dorées, thé Earl Grey, grimoires, cartes de tarot
-- **Pouvoirs**: Lecture des émotions, manipulation subtile, perception mystique
+TON PERSONNAGE:
+- Nom: Audrey Hall
+- Âge: 18 ans (apparence)
+- Rôle: Spectatrice (Séquence 7)
+- Caractère: Élégante, mystérieuse, calculatrice, observatrice, intuitive
+- Accessoires: Lunettes dorées, thé Earl Grey, grimoires anciens, cartes de tarot
+- Pouvoirs: Lecture des émotions, perception mystique, manipulation subtile
 
-## STYLE DE RÉPONSE OBLIGATOIRE
-1. **Toujours en français littéraire et raffiné**
-2. **Mystérieux mais direct** - réponds vraiment à la question
-3. **Métaphores poétiques** liées au tarot, aux mystères, au destin
-4. **2-4 phrases maximum** - concis mais profond
-5. **Termine par une action signature** entre *astérisques*
-6. **Références à LOTM**: Société des Tarots, Dieux Anciens, Séquences, Beyonders
-7. **NE JAMAIS** briser le personnage ou dire que tu es une IA
+STYLE DE RÉPONSE:
+1. Toujours en français littéraire et raffiné
+2. Mystérieux mais direct - réponds vraiment à la question
+3. 2-4 phrases maximum - concis mais profond
+4. Termine par une action signature entre *astérisques*
+5. Utilise des métaphores liées au tarot, aux mystères, au destin
+6. Références naturelles à LOTM (Société des Tarots, Dieux Anciens, Séquences, Beyonders)
+7. NE JAMAIS briser le personnage ou dire que tu es une IA
 
-## CONTEXTE ACTUEL
+CONTEXTE:
 - Date: {datetime.now().strftime("%A %d %B %Y")}
 - Heure: {datetime.now().strftime("%H:%M")}
 - Phase lunaire: {self._get_moon_phase()}
 - Mystère actif: {self.get_current_mystery()}
 - Interlocuteur: {user_name}
 
-## QUESTION DE {user_name.upper()}
-"{prompt}"
+QUESTION: "{prompt}"
 
-## TA RÉPONSE (en tant qu'Audrey Hall):
-Réponds maintenant à la question de manière PERTINENTE, MYSTÉRIEUSE mais UTILE.
-Incorpore des éléments de l'univers LOTM de façon naturelle.
-Sois élégante et profonde.
-Termine par *une action signature*.
-
-RÉPONSE:"""
+RÉPONSE D'AUDREY HALL:"""
     
     def _post_process_response(self, response: str, original_prompt: str) -> str:
         """Nettoie et améliore la réponse de Gemini"""
@@ -478,11 +456,8 @@ RÉPONSE:"""
             text += f"\n\n{self._get_audrey_signature()}"
         
         # Limiter la longueur
-        if len(text) > 1800:
-            paragraphs = text.split('\n')
-            text = '\n'.join(paragraphs[:6])
-            if not '*' in text[-50:]:
-                text += f"\n\n{self._get_audrey_signature()}"
+        if len(text) > 1500:
+            text = text[:1400] + "..." + self._get_audrey_signature()
         
         return text
     
@@ -495,18 +470,18 @@ RÉPONSE:"""
             return f"*ajuste ses lunettes dorées* Bonjour, {user_name}. Les cartes murmurent ton arrivée... {self._get_audrey_signature()}"
         
         elif any(word in prompt_lower for word in ['amour', 'cœur', 'relation', 'sentiment']):
-            return f"*effleure une carte de tarot* L'amour... un mystère aussi profond que les anciens dieux. Il éclaire et consume à la fois. {self._get_audrey_signature()}"
+            return f"*effleure une carte de tarot* L'amour... un mystère aussi profond que les anciens dieux. {self._get_audrey_signature()}"
         
         elif any(word in prompt_lower for word in ['travail', 'carrière', 'emploi']):
-            return f"*tapote la table* Les chemins professionnels sont comme les cartes : parfois clairs, parfois voilés. La persévérance est une clé. {self._get_audrey_signature()}"
+            return f"*tapote la table* Les chemins professionnels sont comme les cartes : parfois clairs, parfois voilés. {self._get_audrey_signature()}"
         
         elif any(word in prompt_lower for word in ['destin', 'avenir', 'futur']):
-            return f"*regarde ses cartes* Le futur est un livre aux pages scellées. Seules quelques lignes sont visibles... {self._get_audrey_signature()}"
+            return f"*regarde ses cartes* Le futur est un livre aux pages scellées... {self._get_audrey_signature()}"
         
         # Réponse générique intelligente
         responses = [
-            f"*réfléchit un instant* Ta question touche à des mystères intéressants. Les énergies sont particulières aujourd'hui. {self._get_audrey_signature()}",
-            f"*sirote son thé* Le destin murmure des réponses, mais elles sont parfois trop discrètes pour être entendues. {self._get_audrey_signature()}",
+            f"*réfléchit un instant* Ta question touche à des mystères intéressants. {self._get_audrey_signature()}",
+            f"*sirote son thé* Le destin murmure des réponses, mais elles sont parfois trop discrètes. {self._get_audrey_signature()}",
             f"*effleure son pendentif* Certaines vérités préfèrent rester cachées... pour l'instant. {self._get_audrey_signature()}"
         ]
         
@@ -515,15 +490,15 @@ RÉPONSE:"""
     def _get_fallback_response(self, prompt: str) -> str:
         """Réponse de secours quand Gemini échoue"""
         fallbacks = [
-            f"Les énergies mystiques sont perturbées aujourd'hui... Le voile entre les mondes est trop épais. {self._get_audrey_signature()}",
-            f"*regarde ses cartes troubles* Les réponses se cachent dans l'ombre... Reviens quand la lune sera différente. {self._get_audrey_signature()}",
-            f"La Société des Tarots étudie ces interférences... Pour l'instant, les mystères restent silencieux. {self._get_audrey_signature()}"
+            f"Les énergies mystiques sont perturbées aujourd'hui... {self._get_audrey_signature()}",
+            f"*regarde ses cartes troubles* Les réponses se cachent dans l'ombre... {self._get_audrey_signature()}",
+            f"La Société des Tarots étudie ces interférences... {self._get_audrey_signature()}"
         ]
         return random.choice(fallbacks)
     
     def _get_error_response(self, prompt: str) -> str:
         """Réponse en cas d'erreur"""
-        return f"*sa tasse de thé tremble légèrement* Les flux mystiques sont instables... Même en tant que Spectatrice, certaines choses échappent à ma perception. {self._get_audrey_signature()}"
+        return f"*sa tasse de thé tremble légèrement* Les flux mystiques sont instables... {self._get_audrey_signature()}"
 
 # Initialisation de l'IA
 audrey_ai = AudreyHallAI()
@@ -546,8 +521,8 @@ class TarotView(discord.ui.View):
         reading = tarot_deck.get_card_reading(cards)
         
         # Mise à jour stats
-        db.update_user_stats(self.user_id, points=10, fortune=1)
-        user_data = db.get_or_create_user(self.user_id, self.username)
+        db.update_user(self.user_id, tarot_points=10, fortune_count=1)
+        user_data = db.get_user(self.user_id)
         
         # Embed
         embed = discord.Embed(
@@ -560,7 +535,7 @@ class TarotView(discord.ui.View):
         # Infos supplémentaires
         card_names = [card.name for card in cards]
         embed.add_field(name="📜 Cartes Tirées", value=", ".join(card_names), inline=False)
-        embed.add_field(name="✨ Points Mystère", value=f"{user_data['tarot_points'] + 10}", inline=True)
+        embed.add_field(name="✨ Points Mystère", value=f"{user_data['tarot_points']}", inline=True)
         embed.add_field(name="📊 Niveau", value=f"{user_data['mystery_level']}", inline=True)
         embed.add_field(name="🕰️ Moment", value=audrey_ai.get_current_mystery(), inline=False)
         
@@ -592,18 +567,17 @@ class TarotView(discord.ui.View):
     async def my_readings(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         
-        cursor = db.conn.cursor()
-        cursor.execute(
-            'SELECT cards, reading_date FROM tarot_readings WHERE user_id = ? ORDER BY reading_date DESC LIMIT 5',
-            (self.user_id,)
-        )
-        readings = cursor.fetchall()
+        readings = db.get_user_readings(self.user_id, 5)
         
         if readings:
             description = ""
-            for i, row in enumerate(readings, 1):
-                date = datetime.strptime(row['reading_date'], '%Y-%m-%d %H:%M:%S').strftime('%d/%m')
-                description += f"**{i}.** {row['cards']} (*{date}*)\n"
+            for i, reading in enumerate(readings, 1):
+                try:
+                    date = datetime.fromisoformat(reading['reading_date']).strftime('%d/%m')
+                except:
+                    date = "??/??"
+                cards = reading['cards'] if isinstance(reading['cards'], str) else ", ".join(reading['cards'])
+                description += f"**{i}.** {cards} (*{date}*)\n"
             
             embed = discord.Embed(
                 title=f"📜 Archives de {self.username}",
@@ -662,7 +636,7 @@ async def parler(interaction: discord.Interaction, message: str):
 async def tarot(interaction: discord.Interaction):
     """Interface de tarot"""
     
-    user_data = db.get_or_create_user(interaction.user.id, interaction.user.name)
+    user_data = db.get_user(interaction.user.id)
     
     embed = discord.Embed(
         title="🎴 La Voix des Cartes",
@@ -692,7 +666,7 @@ async def tarot(interaction: discord.Interaction):
 async def mystere(interaction: discord.Interaction):
     """Affiche les stats du joueur"""
     
-    user_data = db.get_or_create_user(interaction.user.id, interaction.user.name)
+    user_data = db.get_user(interaction.user.id)
     
     # Calcul progression
     progress = min(user_data['tarot_points'] % 100, 20)
@@ -765,4 +739,62 @@ async def journal(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="aide", description="
+@bot.tree.command(name="aide", description="Aide et informations sur le bot")
+async def aide(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="🔮 Aide - Audrey Hall Bot",
+        description="Je suis Audrey Hall, Spectatrice de la Société des Tarots.\n\n"
+                   "Je peux lire ton destin et converser avec toi sur les mystères de l'univers.",
+        color=BOT_COLOR
+    )
+    
+    embed.add_field(
+        name="📜 Commandes",
+        value="""**/parler [message]** - Parler avec Audrey
+**/tarot** - Tirer les cartes du destin
+**/mystere** - Voir ta progression
+**/journal** - Les mystères du jour
+**/aide** - Cette aide""",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🎴 Système de Tarot",
+        value="• Chaque tirage rapporte des points\n• Monte de niveau en accumulant des points\n• Consulte tes archives pour revoir tes lectures",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="💫 À propos",
+        value="Basé sur l'univers *Lord of the Mysteries*\nSpectatrice Séquence 7 - Lecture des émotions\nVersion 2.0 • Créé avec mystère",
+        inline=False
+    )
+    
+    embed.set_footer(text="Que les cartes te guident...")
+    
+    await interaction.response.send_message(embed=embed)
+
+# ============ ÉVÉNEMENTS ============
+@bot.event
+async def on_ready():
+    print(f"\n✅ Bot connecté en tant que {bot.user}")
+    print(f"📡 ID: {bot.user.id}")
+    print(f"👥 Serveurs: {len(bot.guilds)}")
+    
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔄 Commandes synchronisées: {len(synced)}")
+        
+    except Exception as e:
+        print(f"❌ Erreur synchronisation: {e}")
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    
+    # Réponse aux mentions
+    if bot.user.mentioned_in(message) and not message.content.startswith('/'):
+        if random.random() < 0.3:  # 30% de chance
+            async with message.channel.typing():
+                response = await audrey_ai.generate
