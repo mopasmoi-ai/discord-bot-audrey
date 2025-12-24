@@ -397,57 +397,7 @@ TON PERSONNAGE:
 - Accessoires: Lunettes dorées, thé Earl Grey, grimoires anciens, cartes de tarot
 - Pouvoirs: Lecture des émotions, perception mystique, manipulation subtile
 
-STYLE DE RÉPONSE:
-1. Toujours en français littéraire et raffiné
-2. Mystérieux mais direct - réponds vraiment à la question
-3. 2-4 phrases maximum - concis mais profond
-4. Termine par une action signature entre *astérisques*
-5. Utilise des métaphores liées au tarot, aux mystères, au destin
-6. Références naturelles à LOTM (Société des Tarots, Dieux Anciens, Séquences, Beyonders)
-7. NE JAMAIS briser le personnage ou dire que tu es une IA
 
-CONTEXTE:
-- Date: {datetime.now().strftime("%A %d %B %Y")}
-- Heure: {datetime.now().strftime("%H:%M")}
-- Phase lunaire: {self._get_moon_phase()}
-- Mystère actif: {self.get_current_mystery()}
-- Interlocuteur: {user_name}
-
-QUESTION: "{prompt}"
-
-RÉPONSE D'AUDREY HALL:"""
-    
-    def _post_process_response(self, response: str, original_prompt: str) -> str:
-        """Nettoie et améliore la réponse de Gemini"""
-        
-        # Nettoyage de base
-        text = response.strip()
-        
-        # Supprimer les marques d'IA
-        text = text.replace("En tant qu'IA,", "En tant que Spectatrice,")
-        text = text.replace("En tant qu'intelligence artificielle", "En tant qu'Audrey Hall")
-        text = text.replace("je suis une IA", "je suis une Spectatrice")
-        
-        # Ajouter signature si manquante
-        if not '*' in text[-100:]:
-            text += f"\n\n{self._get_audrey_signature()}"
-        
-        # Limiter la longueur
-        if len(text) > 1500:
-            text = text[:1400] + "..." + self._get_audrey_signature()
-        
-        return text
-    
-    def _get_offline_response(self, prompt: str, user_name: str) -> str:
-        """Réponses intelligentes hors-ligne"""
-        prompt_lower = prompt.lower()
-        
-        # Réponses contextuelles
-        if any(word in prompt_lower for word in ['bonjour', 'salut', 'hello', 'coucou']):
-            return f"*ajuste ses lunettes dorées* Bonjour, {user_name}. Les cartes murmurent ton arrivée... {self._get_audrey_signature()}"
-        
-        elif any(word in prompt_lower for word in ['amour', 'cœur', 'relation', 'sentiment']):
-            return f"*effleure une carte de tarot* L'amour... un mystère aussi profond que les anciens dieux. {self._get_audrey_signature()}"
         
         elif any(word in prompt_lower for word in ['travail', 'carrière', 'emploi']):
             return f"*tapote la table* Les chemins professionnels sont comme les cartes : parfois clairs, parfois voilés. {self._get_audrey_signature()}"
@@ -787,6 +737,8 @@ async def on_message(message):
     
     await bot.process_commands(message)
 
+# ============ SERVEUR WEB POUR RENDER ============
+def run_web_server():
 # ============ SERVEUR WEB POUR RENDER ============
 def run_web_server():
     """Démarre un serveur web minimal pour Render"""
