@@ -672,34 +672,34 @@ async def daily_reset():
 
 # ============ LANCEMENT ============
 if __name__ == "__main__":
-    # Fonction de gestion des signaux pour Render
+    # Gestion des signaux
+    import signal
+    import sys
+    
     def signal_handler(sig, frame):
-        print(f'\n🔴 Signal {sig} reçu. Arrêt propre du bot...')
-        # Arrêter les tâches périodiques
+        print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
         change_mystery.cancel()
         daily_reset.cancel()
-        # Quitter
         sys.exit(0)
     
-    # Configurer les handlers de signaux
-    signal.signal(signal.SIGTERM, signal_handler)  # Signal de Render
-    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
     
-    # Démarrer les tâches APRÈS la connexion du bot
+    # Démarrer tâches après connexion
     @bot.event
     async def on_connect():
-        print("🌐 Connexion à Discord établie, démarrage des tâches...")
+        print("✅ Connexion établie, démarrage des tâches...")
         change_mystery.start()
         daily_reset.start()
     
-    # Lancer le bot avec gestion d'erreurs
+    # Lancer le bot
     try:
-        print("🚀 Démarrage du bot Audrey Hall...")
+        print("🚀 Lancement du bot Audrey Hall...")
         bot.run(TOKEN)
     except KeyboardInterrupt:
-        print("\n🔴 Bot arrêté par l'utilisateur")
+        print("\n🔴 Arrêt manuel")
     except Exception as e:
-        print(f"❌ Erreur fatale: {e}")
+        print(f"❌ Erreur: {e}")
         sys.exit(1)
 
 from flask import Flask
