@@ -797,4 +797,64 @@ async def on_message(message):
     if bot.user.mentioned_in(message) and not message.content.startswith('/'):
         if random.random() < 0.3:  # 30% de chance
             async with message.channel.typing():
-                response = await audrey_ai.generate
+                response = await audrey_ai.generate_response(
+                    f"{message.author.name} m'a mentionné en disant: {message.content}",
+                    message.author.name
+                )
+                
+                embed = discord.Embed(
+                    description=response,
+                    color=BOT_COLOR
+                )
+                await message.reply(embed=embed, mention_author=False)
+    
+    await bot.process_commands(message)
+
+# ============ SERVEUR WEB POUR RENDER ============
+def run_web_server():
+    """Démarre un serveur web minimal pour Render"""
+    try:
+        from flask import Flask
+        app = Flask(__name__)
+        
+        @app.route('/')
+        def home():
+            return "✅ Audrey Hall Bot en ligne!"
+        
+        @app.route('/health')
+        def health():
+            return "OK", 200
+        
+        app.run(host='0.0.0.0', port=8080)
+    except ImportError:
+        print("⚠️ Flask non installé, serveur web désactivé")
+    except Exception as e:
+        print(f"⚠️ Erreur serveur web: {e}")
+
+# Démarrer le serveur web dans un thread séparé
+try:
+    web_thread = Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    print("🌐 Serveur web démarré sur le port 8080")
+except:
+    print("⚠️ Impossible de démarrer le serveur web")
+
+# ============ GESTION DES SIGNAUX ============
+def signal_handler(sig, frame):
+    print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# ============ LANCEMENT DU BOT ============
+if __name__ == "__main__":
+    try:
+        print("🚀 Lancement du bot Audrey Hall...")
+        bot.run(TOKEN)
+    except KeyboardInterrupt:
+        print("\n🔴 Arrêt manuel")
+    except Exception as e:
+        print(f"❌ Erreur: {e}")
+        traceback.print_exc()
+        sys.exit(1)
