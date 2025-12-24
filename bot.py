@@ -311,9 +311,9 @@ class AudreyHallAI:
                 }
             ]
             
-            # Modèle Gemini 2.5 Flash Pro (meilleur que chat)
+            # Modèle Gemini 2.5 Flash (meilleur que chat)
             self.model = genai.GenerativeModel(
-                model_name="gemini-2.0-flash-exp",
+                model_name="gemini-2.5-flash",
                 generation_config=generation_config,
                 safety_settings=safety_settings
             )
@@ -321,7 +321,7 @@ class AudreyHallAI:
             # Test de connexion
             test_response = self.model.generate_content("Test - réponds par 'Connecté'")
             if test_response.text:
-                print(f"✅ Gemini 2.5 Flash Pro connecté")
+                print(f"✅ Gemini 2.5 Flash connecté")
                 print(f"   Modèle: {self.model.model_name}")
             else:
                 print("⚠️ Gemini connecté mais pas de réponse")
