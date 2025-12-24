@@ -223,7 +223,7 @@ class AudreyHallAI:
     def __init__(self):
         genai.configure(api_key=GEMINI_KEY)
         self.model = genai.GenerativeModel(
-            'gemini-2.1',
+            'gemini-1.5-flash',
             generation_config={
                 "temperature": 0.85,
                 "top_p": 0.95,
