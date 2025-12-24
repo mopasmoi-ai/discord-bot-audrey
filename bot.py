@@ -7,7 +7,19 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
+try:
+    import audioop
+except ImportError:
+    # Créer un faux module audioop pour contourner l'erreur
+    class FakeAudioop:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+    
+    sys.modules['audioop'] = FakeAudioop()
+    print("⚠️ Patch audioop appliqué pour Python 3.13")
 
+# Désactiver les warnings liés à l'audio
+os.environ['DISCORD_INSTALL_AUDIO_DEPS'] = '0'
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
