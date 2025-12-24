@@ -701,3 +701,24 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Erreur fatale: {e}")
         sys.exit(1)
+
+from flask import Flask
+from threading import Thread
+
+# Mini serveur web pour Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "✅ Audrey Hall Bot en ligne!"
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=8080)
+
+# Démarrer le serveur dans un thread séparé
+web_thread = Thread(target=run_web_server, daemon=True)
+web_thread.start()
+
+# Lancer le bot (gardez votre code actuel)
+if __name__ == "__main__":
+    # ... votre code de lancement actuel ...
