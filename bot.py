@@ -775,4 +775,5 @@ async def on_message(message):
         if random.random() < 0.3:  # 30% de chance
             async with message.channel.typing():
                 response = await audrey_ai.generate_response(
-                    f"{message.author.name}
+                    f"{message.author.name} m'a mentionné en disant: {message.content[:200]}",
+                    message.author.name
