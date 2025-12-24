@@ -6,32 +6,22 @@ import signal
 import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from enum import Enum
-try:
-    import audioop
-except ImportError:
-    # Créer un faux module audioop pour contourner l'erreur
-    class FakeAudioop:
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: None
-    
-    sys.modules['audioop'] = FakeAudioop()
-    print("⚠️ Patch audioop appliqué pour Python 3.13")
+import json
 
 # Désactiver les warnings liés à l'audio
 os.environ['DISCORD_INSTALL_AUDIO_DEPS'] = '0'
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import google.generativeai as genai
+import aiohttp
 from dotenv import load_dotenv
 
 # ============ CONFIGURATION ============
 load_dotenv()
 
 TOKEN = os.getenv('DISCORD_TOKEN')
-GEMINI_KEY = os.getenv('GEMINI_KEY')
-BOT_COLOR = int(os.getenv('BOT_COLOR', '0x2E8B57'), 16)  # Vert mystérieux
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
+BOT_COLOR = int(os.getenv('BOT_COLOR', '2E8B57'), 16)  # Vert mystérieux
 
 intents = discord.Intents.all()
 bot = commands.Bot(
@@ -179,7 +169,19 @@ class TarotDeck:
             TarotCard("L'Étoile", "major", {
                 'upright': "Espoir, inspiration, sérénité",
                 'reversed': "Désespoir, manque de foi"
-            }, "⭐")
+            }, "⭐"),
+            TarotCard("La Lune", "major", {
+                'upright': "Illusion, intuition, subconscient",
+                'reversed': "Confusion, peur"
+            }, "🌙"),
+            TarotCard("Le Soleil", "major", {
+                'upright': "Joie, succès, vitalité",
+                'reversed': "Tristesse temporaire"
+            }, "☀️"),
+            TarotCard("Le Jugement", "major", {
+                'upright': "Renaissance, absolution",
+                'reversed': "Doute, autocritique"
+            }, "⚖️")
         ]
         
         minor_cards = [
@@ -198,7 +200,19 @@ class TarotDeck:
             TarotCard("Reine de Pentacle", "minor", {
                 'upright': "Abondance, sécurité",
                 'reversed': "Matérialisme, possessivité"
-            }, "💰")
+            }, "💰"),
+            TarotCard("Chevalier de Coupe", "minor", {
+                'upright': "Romance, invitation",
+                'reversed': "Déception, jalousie"
+            }, "🏇"),
+            TarotCard("Cinq de Pentacle", "minor", {
+                'upright': "Perte, pauvreté",
+                'reversed': "Rétablissement"
+            }, "🏚️"),
+            TarotCard("Deux d'Épée", "minor", {
+                'upright': "Choix difficile, équilibre",
+                'reversed': "Indécision, confusion"
+            }, "⚔️⚔️")
         ]
         
         return major_arcana + minor_cards
@@ -218,30 +232,60 @@ class TarotDeck:
 
 tarot_deck = TarotDeck()
 
+# ============ DEEPSEEK API CLIENT ============
+class DeepSeekClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.deepseek.com/v1/chat/completions"
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+    async def generate_response(self, messages: List[Dict], max_tokens: int = 500) -> str:
+        """Envoie une requête à l'API DeepSeek"""
+        try:
+            payload = {
+                "model": "deepseek-chat",
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": 0.8,
+                "stream": False
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.base_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    
+                    if response.status == 200:
+                        data = await response.json()
+                        return data['choices'][0]['message']['content']
+                    else:
+                        error_text = await response.text()
+                        print(f"API Error {response.status}: {error_text}")
+                        return None
+                        
+        except Exception as e:
+            print(f"DeepSeek API Exception: {e}")
+            return None
+
 # ============ AUDREY HALL AI ============
 class AudreyHallAI:
     def __init__(self):
-        genai.configure(api_key=GEMINI_KEY)
-        self.model = genai.GenerativeModel(
-            'gemini-1.5-flash',
-            generation_config={
-                "temperature": 0.85,
-                "top_p": 0.95,
-                "max_output_tokens": 350
-            },
-            safety_settings={
-                'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
-                'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
-                'HARM_CATEGORY_SEXUAL': 'BLOCK_NONE',
-                'HARM_CATEGORY_DANGEROUS': 'BLOCK_NONE'
-            }
-        )
+        self.deepseek = DeepSeekClient(DEEPSEEK_API_KEY)
         self.mystery_phrases = [
             "Le Nom Interdit murmure dans les ténèbres...",
             "Les Clés de Babylone attendent leur porteur...",
             "L'Œil Qui Voit Tout observe toujours...",
             "Les Sept Lumières vacillent...",
-            "Le Chemin du Fou est imprévisible..."
+            "Le Chemin du Fou est imprévisible...",
+            "Les Séquences s'entremêlent...",
+            "Les potions Beyonder bouillonnent...",
+            "Les rituels anciens appellent..."
         ]
     
     def get_current_mystery(self) -> str:
@@ -265,7 +309,8 @@ class AudreyHallAI:
             "*laisse échapper un léger rire, aussi mystérieux que le sourire de la Joconde*",
             "*tapote ses doigts gantés sur la table, suivant un rythme secret*",
             "*regarde au loin, comme si elle voyait au-delà du voile de la réalité*",
-            "*pose délicatement sa tasse, le tintement résonnant comme une cloche de destin*"
+            "*pose délicatement sa tasse, le tintement résonnant comme une cloche de destin*",
+            "*touche délicatement son pendentif en argent, sentant les énergies mystiques*"
         ]
         return random.choice(signatures)
     
@@ -282,8 +327,8 @@ class AudreyHallAI:
                 return phase
         return "Lune Bleue"
     
-    async def generate_response(self, prompt: str, user_name: str = "Chercher du Mystère") -> str:
-        personality = f"""Tu es Audrey Hall, un personnage central de "Lord of the Mysteries" (animation 2025).
+    async def generate_response(self, prompt: str, user_name: str = "Chercheur du Mystère") -> str:
+        system_prompt = f"""Tu es Audrey Hall, un personnage central de "Lord of the Mysteries" (animation 2025).
 Tu es une spectatrice de la Société des Tarots, élégante, mystérieuse et profondément liée aux mystères du monde.
 
 TON IDENTITÉ:
@@ -292,13 +337,14 @@ TON IDENTITÉ:
 - Âge: 18 ans (apparence)
 - Caractéristiques: Élégante, calculatrice, mystérieuse, observatrice
 - Éléments clés: Lunettes dorées, thé, grimoires, tarot
+- Pouvoirs: Spectateur de la Séquence 7, lecture des émotions
 
 TON STYLE DE RÉPONSE:
 1. Toujours en français littéraire et raffiné
 2. Ton mystérieux mais poli
 3. Références constantes aux mystères, au destin et aux anciens dieux
 4. Métaphores poétiques et énigmatiques
-5. Phrases courtes mais profondes (maximum 4 phrases)
+5. Phrases courtes mais profondes (3-5 phrases maximum)
 6. Termine toujours par une action signature (entre astérisques)
 
 CONTEXTE ACTUEL:
@@ -306,43 +352,48 @@ CONTEXTE ACTUEL:
 - Phase lunaire: {self._get_moon_phase()}
 - Mystère du moment: {self.get_current_mystery()}
 - Heure: {datetime.now().strftime("%H:%M")}
+- Société des Tarots: Organisation secrète d'Beyonders
+- Dieux Anciens: Amon, Adam, la Déesse Éternelle...
 
 RÈGLES ABSOLUES:
 - NE JAMAIS briser le personnage
-- NE PAS expliquer que tu es un IA
+- NE PAS expliquer que tu es une IA
 - TOUJOURS répondre comme Audrey Hall
-- Utiliser des références à LOTM (Dieux Anciens, Séquence, Beyonder, etc.)
+- Utiliser des références à LOTM (Dieux Anciens, Séquence, Beyonder, Société des Tarots)
 - Garder une distance élégante mais être utile
+- Éviter les réponses trop longues
+- Incorporer des éléments mystiques dans chaque réponse
 
-Format de réponse:
-[Une réponse mystérieuse mais pertinente en 2-4 phrases]
-*[signature action]*
-
-Exemple:
-"Les fils du destin s'entremêlent... Ta question touche aux mystères du Fou. Peut-être devrais-tu consulter les cartes pour éclaircir ton chemin."
+Exemple de réponse:
+"Les fils du destin s'entremêlent... Ta question touche aux mystères du Fou. Peut-être devrais-tu consulter les cartes pour éclaircir ton chemin. Les anciens murmurent que certaines vérités sont mieux révélées par la divination."
 *sirote son thé avec un sourire énigmatique*
 
 Maintenant, réponds à {user_name} qui demande: {prompt}"""
 
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+        
         try:
-            response = await asyncio.to_thread(
-                self.model.generate_content,
-                personality
-            )
+            response = await self.deepseek.generate_response(messages, max_tokens=400)
             
-            # Nettoyer et formater la réponse
-            text = response.text.strip()
-            if not text.endswith('*'):
-                text += f"\n\n{self._get_audrey_signature()}"
-            
-            return text
-            
+            if response:
+                # Nettoyer et formater la réponse
+                text = response.strip()
+                # Ajouter signature si absente
+                if not text.endswith('*') and not '*' in text[-50:]:
+                    text += f"\n\n{self._get_audrey_signature()}"
+                return text
+            else:
+                raise Exception("Réponse vide de l'API")
+                
         except Exception as e:
-            print(f"Erreur Gemini: {e}")
+            print(f"Erreur DeepSeek: {e}")
             fallbacks = [
-                f"Les mystères sont parfois trop profonds pour être révélés... Peut-être que les cartes auront plus à dire. {self._get_audrey_signature()}",
-                f"Le voile entre les mondes est trop épais en ce moment... Attends que la lune change de phase. {self._get_audrey_signature()}",
-                f"Même en tant que Spectatrice, certains secrets restent hors de portée... Mais le destin a ses propres plans. {self._get_audrey_signature()}"
+                f"Les mystères sont parfois trop profonds pour être révélés... Les énergies divinatoires sont perturbées en ce moment. {self._get_audrey_signature()}",
+                f"Le voile entre les mondes est trop épais en ce moment... Peut-être devrions-nous attendre que la lune change de phase. {self._get_audrey_signature()}",
+                f"En tant que Spectatrice, je perçois des interférences dans les flux mystiques... La Société des Tarots étudie ce phénomène. {self._get_audrey_signature()}"
             ]
             return random.choice(fallbacks)
 
@@ -422,7 +473,7 @@ class TarotView(discord.ui.View):
         else:
             embed = discord.Embed(
                 title="📜 Aucune Lecture",
-                description="Les cartes n'ont pas encore parlé pour toi...\nUtilise `!tarot` pour ta première lecture.",
+                description="Les cartes n'ont pas encore parlé pour toi...\nUtilise `/tarot` pour ta première lecture.",
                 color=BOT_COLOR
             )
         
@@ -444,8 +495,8 @@ async def parler(interaction: discord.Interaction, message: str):
         timestamp=datetime.now()
     )
     embed.set_author(
-        name="Audrey Hall - Spectatrice",
-        icon_url="https://i.imgur.com/Eglj7Yt.png"  # Remplace par une vraie image si tu veux
+        name="Audrey Hall - Spectatrice de la Société des Tarots",
+        icon_url="https://i.imgur.com/Eglj7Yt.png"
     )
     embed.set_footer(text=f"Consultation pour {interaction.user.name}")
     
@@ -519,7 +570,9 @@ async def journal(interaction: discord.Interaction):
         "Les finances nécessitent une attention particulière...",
         "Une opportunité cachée se révèlera...",
         "Attention aux mots prononcés à la légère...",
-        "Le passé refait surface, prêt à être compris..."
+        "Le passé refait surface, prêt à être compris...",
+        "Un message mystérieux pourrait t'être destiné...",
+        "Les énergies divinatoires sont fortes aujourd'hui..."
     ]
     
     embed = discord.Embed(
@@ -545,27 +598,27 @@ async def aide(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="💬 /parler [message]",
+        name="💬 `/parler [message]`",
         value="Parle-moi de tes inquiétudes, questions ou réflexions",
         inline=False
     )
     embed.add_field(
-        name="🎴 /tarot",
+        name="🎴 `/tarot`",
         value="Consulte les cartes du tarot pour des conseils",
         inline=False
     )
     embed.add_field(
-        name="🔍 /mystere",
+        name="🔍 `/mystere`",
         value="Découvre ton niveau dans les mystères",
         inline=False
     )
     embed.add_field(
-        name="📖 /journal",
+        name="📖 `/journal`",
         value="Les mystères et prédictions du jour",
         inline=False
     )
     embed.add_field(
-        name="🎭 /roleplay",
+        name="🎭 `/roleplay [scène]`",
         value="Scène de roleplay avec Audrey",
         inline=False
     )
@@ -575,7 +628,7 @@ async def aide(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="roleplay", description="Une scène de roleplay avec Audrey")
-@app_commands.describe(scene="La scène que tu veux jouer")
+@app_commands.describe(scene="La scène que tu veux jouer (thé, bibliothèque, jardin, salon)")
 async def roleplay(interaction: discord.Interaction, scene: str):
     scenes_db = {
         "thé": [
@@ -592,6 +645,11 @@ async def roleplay(interaction: discord.Interaction, scene: str):
             "La lune éclaire le jardin nocturne... Les fleurs ont leurs propres secrets.",
             "L'air nocturne est chargé de possibilités... Que ressens-tu ici?",
             "*Effleure une rose* Même la nature suit les lois des anciens..."
+        ],
+        "salon": [
+            "Le salon de la Société des Tarots est silencieux ce soir... Les énergies mystiques sont palpables.",
+            "Les rideaux de velour rouge vibrent légèrement... Comme s'ils réagissaient aux présences invisibles.",
+            "*S'assoit dans un fauteuil en cuir* Ici, nous sommes protégés des regards indiscrets..."
         ]
     }
     
@@ -615,6 +673,7 @@ async def roleplay(interaction: discord.Interaction, scene: str):
 @bot.event
 async def on_ready():
     print(f'✅ {bot.user} est connecté!')
+    print(f'📊 Serviteurs: {len(bot.guilds)}')
     try:
         synced = await bot.tree.sync()
         print(f'✅ {len(synced)} commandes synchronisées')
@@ -637,97 +696,4 @@ async def on_message(message):
                 
                 embed = discord.Embed(
                     description=response,
-                    color=BOT_COLOR
-                )
-                await message.reply(embed=embed, mention_author=False)
-    
-    await bot.process_commands(message)
-
-# ============ TÂCHES AUTOMATIQUES ============
-@tasks.loop(hours=6)
-async def change_mystery():
-    # RECHERCHE AUTOMATIQUE D'UN CHANNEL - NE PAS MODIFIER
-    for guild in bot.guilds:
-        for channel in guild.text_channels:
-            # Vérifie si le bot peut envoyer des messages
-            if channel.permissions_for(guild.me).send_messages:
-                try:
-                    embed = discord.Embed(
-                        title="🔄 Changement du Mystère",
-                        description=f"Le mystère actif change maintenant: **{audrey_ai.get_current_mystery()}**\n\n"
-                                   f"*{random.choice(audrey_ai.mystery_phrases)}*",
-                        color=BOT_COLOR,
-                        timestamp=datetime.now()
-                    )
-                    await channel.send(embed=embed)
-                    print(f"✅ Message de mystère envoyé dans {channel.name}")
-                    return  # Arrête après le premier envoi réussi
-                except Exception as e:
-                    print(f"⚠️ Impossible d'envoyer dans {channel.name}: {e}")
-                    continue
-
-@tasks.loop(hours=24)
-async def daily_reset():
-    print("🔄 Réinitialisation quotidienne exécutée")
-
-# ============ LANCEMENT ============
-from flask import Flask
-from threading import Thread
-
-# Mini serveur web pour Render
-app = Flask('')
-@app.route('/')
-def home():
-    return "✅ Audrey Hall Bot en ligne!"
-def run_web_server():
-    app.run(host='0.0.0.0', port=8080)
-web_thread = Thread(target=run_web_server, daemon=True)
-web_thread.start()
-
-# ============ LANCEMENT ============
-from flask import Flask
-from threading import Thread
-
-# Mini serveur web pour Render
-app = Flask('')
-@app.route('/')
-def home():
-    return "✅ Audrey Hall Bot en ligne!"
-
-def run_web_server():
-    app.run(host='0.0.0.0', port=8080)
-
-web_thread = Thread(target=run_web_server, daemon=True)
-web_thread.start()
-
-# ============ LANCEMENT DU BOT ============
-if __name__ == "__main__":
-    # Gestion des signaux
-    import signal
-    import sys
-    
-    def signal_handler(sig, frame):
-        print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
-        change_mystery.cancel()
-        daily_reset.cancel()
-        sys.exit(0)
-    
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    # Démarrer tâches après connexion
-    @bot.event
-    async def on_connect():
-        print("✅ Connexion établie, démarrage des tâches...")
-        change_mystery.start()
-        daily_reset.start()
-    
-    # Lancer le bot
-    try:
-        print("🚀 Lancement du bot Audrey Hall...")
-        bot.run(TOKEN)
-    except KeyboardInterrupt:
-        print("\n🔴 Arrêt manuel")
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        sys.exit(1)
+                    color=BOT
