@@ -684,9 +684,6 @@ def run_web_server():
 web_thread = Thread(target=run_web_server, daemon=True)
 web_thread.start()
 
-... [votre code des tâches] ...
-
-# ============ LANCEMENT ============
 # ============ LANCEMENT ============
 from flask import Flask
 from threading import Thread
