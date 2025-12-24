@@ -1,5 +1,4 @@
 discord.py>=2.3.0
 python-dotenv>=1.0.0
-aiohttp>=3.9.0
-audioop-lts; python_version>='3.13'
-flask
+google-generativeai>=0.3.0
+sqlite3
