@@ -276,9 +276,11 @@ class AudreyHallAI:
             
             # Test de connexion simple
             print(f"✅ Nouveau SDK Google GenAI connecté")
+            print(f"🎭 Modèle disponible: gemini-2.0-flash-exp")
                 
         except Exception as e:
             print(f"❌ Erreur nouveau SDK Gemini: {e}")
+            traceback.print_exc()
             self.client = None
     
     def get_current_mystery(self) -> str:
@@ -339,23 +341,20 @@ class AudreyHallAI:
         context_prompt = self._build_context_prompt(prompt, user_name)
         
         try:
-            # NOUVEAU: Génération avec le nouveau SDK
-            print(f"🧠 Génération avec Google GenAI...")
+            # NOUVEAU: Génération avec le nouveau SDK - CORRIGÉ
+            print(f"🧠 Génération avec Google GenAI (gemini-2.0-flash-exp)...")
             
-            # Configuration de génération
-            generation_config = {
-                "temperature": 0.85,
-                "top_p": 0.95,
-                "top_k": 40,
-                "max_output_tokens": 600,
-            }
-            
-            # Appel au modèle avec le nouveau SDK
+            # CORRECTION ICI: Appel correct à l'API
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
-                model="gemini-1.5-flash",  # Modèle compatible
+                model="gemini-2.0-flash-exp",  # Modèle compatible actuellement
                 contents=context_prompt,
-                config=generation_config
+                config={
+                    "temperature": 0.85,
+                    "top_p": 0.95,
+                    "top_k": 40,
+                    "max_output_tokens": 600,
+                }
             )
             
             if response and response.text:
@@ -397,7 +396,57 @@ TON PERSONNAGE:
 - Accessoires: Lunettes dorées, thé Earl Grey, grimoires anciens, cartes de tarot
 - Pouvoirs: Lecture des émotions, perception mystique, manipulation subtile
 
+STYLE DE RÉPONSE:
+1. Toujours en français littéraire et raffiné
+2. Mystérieux mais direct - réponds vraiment à la question
+3. 2-4 phrases maximum - concis mais profond
+4. Termine par une action signature entre *astérisques*
+5. Utilise des métaphores liées au tarot, aux mystères, au destin
+6. Références naturelles à LOTM (Société des Tarots, Dieux Anciens, Séquences, Beyonders)
+7. NE JAMAIS briser le personnage ou dire que tu es une IA
 
+CONTEXTE:
+- Date: {datetime.now().strftime("%A %d %B %Y")}
+- Heure: {datetime.now().strftime("%H:%M")}
+- Phase lunaire: {self._get_moon_phase()}
+- Mystère actif: {self.get_current_mystery()}
+- Interlocuteur: {user_name}
+
+QUESTION: "{prompt}"
+
+RÉPONSE D'AUDREY HALL:"""
+    
+    def _post_process_response(self, response: str, original_prompt: str) -> str:
+        """Nettoie et améliore la réponse de Gemini"""
+        
+        # Nettoyage de base
+        text = response.strip()
+        
+        # Supprimer les marques d'IA
+        text = text.replace("En tant qu'IA,", "En tant que Spectatrice,")
+        text = text.replace("En tant qu'intelligence artificielle", "En tant qu'Audrey Hall")
+        text = text.replace("je suis une IA", "je suis une Spectatrice")
+        
+        # Ajouter signature si manquante
+        if not '*' in text[-100:]:
+            text += f"\n\n{self._get_audrey_signature()}"
+        
+        # Limiter la longueur
+        if len(text) > 1500:
+            text = text[:1400] + "..." + self._get_audrey_signature()
+        
+        return text
+    
+    def _get_offline_response(self, prompt: str, user_name: str) -> str:
+        """Réponses intelligentes hors-ligne"""
+        prompt_lower = prompt.lower()
+        
+        # Réponses contextuelles
+        if any(word in prompt_lower for word in ['bonjour', 'salut', 'hello', 'coucou']):
+            return f"*ajuste ses lunettes dorées* Bonjour, {user_name}. Les cartes murmurent ton arrivée... {self._get_audrey_signature()}"
+        
+        elif any(word in prompt_lower for word in ['amour', 'cœur', 'relation', 'sentiment']):
+            return f"*effleure une carte de tarot* L'amour... un mystère aussi profond que les anciens dieux. {self._get_audrey_signature()}"
         
         elif any(word in prompt_lower for word in ['travail', 'carrière', 'emploi']):
             return f"*tapote la table* Les chemins professionnels sont comme les cartes : parfois clairs, parfois voilés. {self._get_audrey_signature()}"
@@ -733,57 +782,5 @@ async def on_message(message):
                     description=response,
                     color=BOT_COLOR
                 )
-                await message.reply(embed=embed, mention_author=False)
-    
-    await bot.process_commands(message)
-
-# ============ SERVEUR WEB POUR RENDER ============
-def run_web_server():
-# ============ SERVEUR WEB POUR RENDER ============
-def run_web_server():
-    """Démarre un serveur web minimal pour Render"""
-    try:
-        from flask import Flask
-        app = Flask(__name__)
-        
-        @app.route('/')
-        def home():
-            return "✅ Audrey Hall Bot en ligne!"
-        
-        @app.route('/health')
-        def health():
-            return "OK", 200
-        
-        app.run(host='0.0.0.0', port=8080)
-    except ImportError:
-        print("⚠️ Flask non installé, serveur web désactivé")
-    except Exception as e:
-        print(f"⚠️ Erreur serveur web: {e}")
-
-# Démarrer le serveur web dans un thread séparé
-try:
-    web_thread = Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    print("🌐 Serveur web démarré sur le port 8080")
-except:
-    print("⚠️ Impossible de démarrer le serveur web")
-
-# ============ GESTION DES SIGNAUX ============
-def signal_handler(sig, frame):
-    print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
-    sys.exit(0)
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-# ============ LANCEMENT DU BOT ============
-if __name__ == "__main__":
-    try:
-        print("🚀 Lancement du bot Audrey Hall...")
-        bot.run(TOKEN)
-    except KeyboardInterrupt:
-        print("\n🔴 Arrêt manuel")
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+                
+                await message.reply
