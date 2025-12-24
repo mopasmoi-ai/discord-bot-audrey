@@ -687,6 +687,7 @@ web_thread.start()
 ... [votre code des tâches] ...
 
 # ============ LANCEMENT ============
+# ============ LANCEMENT ============
 from flask import Flask
 from threading import Thread
 
@@ -695,8 +696,10 @@ app = Flask('')
 @app.route('/')
 def home():
     return "✅ Audrey Hall Bot en ligne!"
+
 def run_web_server():
     app.run(host='0.0.0.0', port=8080)
+
 web_thread = Thread(target=run_web_server, daemon=True)
 web_thread.start()
 
