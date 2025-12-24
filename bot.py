@@ -687,13 +687,25 @@ async def on_message(message):
     
     # Réponse aléatoire aux mentions
     if bot.user.mentioned_in(message) and not message.content.startswith('!'):
-        if random.random() < 0.3:  # 30% de chance de répondre
-            async with message.channel.typing():
-                response = await audrey_ai.generate_response(
-                    f"{message.author.name} m'a mentionné en disant: {message.content}",
-                    message.author.name
-                )
-                
-                embed = discord.Embed(
-                    description=response,
-                    color=BOT
+       @bot.tree.command(name="parler", description="Parler avec Audrey Hall")
+@app_commands.describe(message="Ton message à Audrey")
+async def parler(interaction: discord.Interaction, message: str):
+    await interaction.response.defer()
+    
+    # Générer la réponse
+    response = await audrey_ai.generate_response(message, interaction.user.name)
+    
+    # Créer l'embed
+    embed = discord.Embed(
+        title="💬 Audrey Hall murmure...",
+        description=response,
+        color=BOT_COLOR,
+        timestamp=datetime.now()
+    )
+    embed.set_author(
+        name="Audrey Hall - Spectatrice",
+        icon_url="https://i.imgur.com/Eglj7Yt.png"
+    )
+    embed.set_footer(text=f"Consultation pour {interaction.user.name}")
+    
+    await interaction.followup.send(embed=embed)
