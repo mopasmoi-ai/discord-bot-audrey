@@ -1,49 +1,29 @@
-# .gitignore - EMPÊCHE DE PUBLIER VOS CLÉS SECRÈTES
-
-# Fichiers d'environnement
+# Environnement
 .env
-*.env
-env/
 venv/
-.env.local
-.env.production
+env/
+__pycache__/
+*.pyc
 
-# Fichiers sensibles
-secrets.py
-config_secret.py
-credentials.json
-token.json
-
-# Base de données SQLite
+# Base de données
 *.db
-*.sqlite
 *.sqlite3
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# Logs
+logs/
+*.log
 
-# Éditeurs
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+*.egg-info/
+dist/
+build/
