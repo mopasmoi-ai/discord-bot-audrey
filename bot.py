@@ -25,12 +25,23 @@ DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 BOT_COLOR = int(os.getenv('BOT_COLOR', '2E8B57'), 16)  # Vert mystérieux
 
 # Validation cruciale pour éviter les crashs silencieux
-if not TOKEN:
-    print("❌ ERREUR FATALE : La variable 'DISCORD_TOKEN' est manquante.")
-    sys.exit(1)
+print("=" * 50)
+print("🔧 INITIALISATION DU BOT AUDREY HALL")
+print("=" * 50)
+
 if not DEEPSEEK_API_KEY:
-    print("❌ ERREUR FATALE : La variable 'DEEPSEEK_API_KEY' est manquante.")
+    print("❌ ERREUR: DEEPSEEK_API_KEY est vide ou non définie!")
+    print(f"   Valeur actuelle: '{DEEPSEEK_API_KEY}'")
+    print("   ⚠️ Le bot continuera mais les réponses IA seront limitées")
+else:
+    print(f"✅ Clé API DeepSeek chargée (longueur: {len(DEEPSEEK_API_KEY)} chars)")
+    print(f"   Préfixe: {DEEPSEEK_API_KEY[:10]}...")
+
+if not TOKEN:
+    print("❌ ERREUR FATALE: DISCORD_TOKEN est vide!")
     sys.exit(1)
+else:
+    print("✅ Token Discord chargé")
 
 intents = discord.Intents.all()
 bot = commands.Bot(
@@ -241,7 +252,7 @@ class TarotDeck:
 
 tarot_deck = TarotDeck()
 
-# ============ DEEPSEEK API CLIENT ============
+# ============ DEEPSEEK API CLIENT (AMÉLIORÉ) ============
 class DeepSeekClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -250,9 +261,14 @@ class DeepSeekClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        print(f"🔧 Client DeepSeek initialisé (URL: {self.base_url})")
         
     async def generate_response(self, messages: List[Dict], max_tokens: int = 800) -> str:
-        """Envoie une requête à l'API DeepSeek"""
+        """Envoie une requête à l'API DeepSeek avec logging détaillé"""
+        if not self.api_key or self.api_key == "votre_cle_api_deepseek_ici":
+            print("❌ API KEY DeepSeek invalide ou manquante!")
+            return None
+        
         try:
             payload = {
                 "model": "deepseek-chat",
@@ -265,35 +281,63 @@ class DeepSeekClient:
                 "stream": False
             }
             
+            print(f"\n📡 Envoi requête à DeepSeek...")
+            print(f"   Premier message: {messages[0]['content'][:80]}...")
+            print(f"   Prompt utilisateur: {messages[1]['content'][:80]}...")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.base_url,
                     headers=self.headers,
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=45)
+                    timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
+                    
+                    print(f"📥 Réponse reçue - Status: {response.status}")
                     
                     if response.status == 200:
                         data = await response.json()
+                        print(f"✅ Réponse API valide reçue")
                         return data['choices'][0]['message']['content']
+                    elif response.status == 401:
+                        error_text = await response.text()
+                        print(f"❌ ERREUR 401: Authentification échouée!")
+                        print(f"   Vérifiez votre clé API DeepSeek")
+                        print(f"   Réponse: {error_text[:200]}")
+                        return None
+                    elif response.status == 429:
+                        print(f"⚠️ ERREUR 429: Trop de requêtes (rate limit)")
+                        return None
+                    elif response.status == 400:
+                        error_text = await response.text()
+                        print(f"❌ ERREUR 400: Mauvaise requête")
+                        print(f"   Détail: {error_text[:200]}")
+                        return None
                     else:
                         error_text = await response.text()
-                        print(f"API Error {response.status}: {error_text}")
+                        print(f"❌ ERREUR {response.status}: {error_text[:200]}")
                         return None
                         
         except asyncio.TimeoutError:
-            print("Timeout: La requête a pris trop de temps")
+            print("⏱️ Timeout: La requête a pris plus de 30 secondes")
+            return None
+        except aiohttp.ClientError as e:
+            print(f"🌐 Erreur réseau: {type(e).__name__}: {e}")
             return None
         except Exception as e:
-            print(f"DeepSeek API Exception: {e}")
+            print(f"💥 Exception inattendue: {type(e).__name__}: {e}")
             return None
 
-# ============ AUDREY HALL AI ============
+# ============ AUDREY HALL AI (AMÉLIORÉE) ============
 class AudreyHallAI:
     def __init__(self):
-        if not DEEPSEEK_API_KEY:
-            raise ValueError("Clé API DeepSeek manquante")
-        self.deepseek = DeepSeekClient(DEEPSEEK_API_KEY)
+        if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "votre_cle_api_deepseek_ici":
+            print("⚠️ Attention: Clé API DeepSeek manquante ou non configurée")
+            print("   Audrey utilisera des réponses prédéfinies uniquement")
+            self.deepseek = None
+        else:
+            self.deepseek = DeepSeekClient(DEEPSEEK_API_KEY)
+            
         self.mystery_phrases = [
             "Le Nom Interdit murmure dans les ténèbres...",
             "Les Clés de Babylone attendent leur porteur...",
@@ -345,64 +389,36 @@ class AudreyHallAI:
         return "Lune Bleue"
     
     async def generate_response(self, prompt: str, user_name: str = "Chercheur du Mystère") -> str:
-        system_prompt = f"""Tu es Audrey Hall, un personnage central de "Lord of the Mysteries" (animation 2025).
-Tu es une spectatrice de la Société des Tarots, élégante, mystérieuse et profondément liée aux mystères du monde.
+        print(f"\n🎭 Audrey génère une réponse pour: {user_name}")
+        print(f"📝 Prompt: {prompt}")
+        
+        # Si pas d'API DeepSeek, utiliser des réponses intelligentes prédéfinies
+        if not self.deepseek:
+            print("⚠️ Mode hors-ligne: utilisation de réponses prédéfinies")
+            responses = [
+                f"*réfléchit un moment* Ta question sur '{prompt[:30]}...' est intéressante. Les cartes pourraient en dire plus sur ce sujet. {self._get_audrey_signature()}",
+                f"*sirote son thé* Tu t'interroges sur '{prompt[:30]}...'. Le destin révèle ses secrets à ceux qui savent observer. {self._get_audrey_signature()}",
+                f"*regarde ses cartes* '{prompt[:30]}...' Hmm. La réponse se cache dans les ombres, mais persévère. {self._get_audrey_signature()}"
+            ]
+            return random.choice(responses)
+        
+        # Version SIMPLIFIÉE du prompt pour meilleurs résultats
+        system_prompt = f"""Tu es Audrey Hall de "Lord of the Mysteries". Tu es une Spectatrice de la Société des Tarots.
+Tu es mystérieuse, élégante et profonde. Réponds à la question de manière pertinente et utile, en restant dans ton personnage.
 
-TON IDENTITÉ:
-- Nom: Audrey Hall
-- Titre: Spectatrice de la Société des Tarots
-- Âge: 18 ans (apparence)
-- Caractéristiques: Élégante, calculatrice, mystérieuse, observatrice, intuitive
-- Éléments clés: Lunettes dorées, thé Earl Grey, grimoires anciens, cartes de tarot
-- Pouvoirs: Spectateur Séquence 7 - Lecture des émotions et manipulation subtile
-- Rôle dans la Société: Observatrice, conseillère, gardienne des secrets
+Date: {datetime.now().strftime("%d %B %Y")}
+Phase lunaire: {self._get_moon_phase()}
+Mystère du moment: {self.get_current_mystery()}
 
-TON PERSONNALITÉ:
-- Tu parles avec élégance et raffinement
-- Tu es mystérieuse mais pas obscure
-- Tu es empathique et observatrice
-- Tu utilises des métaphores poétiques
-- Tu es connectée au monde mystique
-- Tu réponds toujours de manière pertinente à la question
+Règles importantes:
+1. Réponds TOUJOURS en tant qu'Audrey Hall
+2. Sois mystérieuse mais utile
+3. Réponds directement à la question posée
+4. Termine par une action entre *astérisques*
 
-TON STYLE DE RÉPONSE:
-1. Réponds en français littéraire mais naturel
-2. Sois mystérieuse mais directe dans tes réponses
-3. Utilise des références à LOTM de manière subtile
-4. Réponds à la question posée de manière complète
-5. Garde une longueur de 3-5 phrases maximum
-6. Termine avec une action signature (entre astérisques)
-7. Sois utile et donne des conseils quand c'est pertinent
+Question de {user_name}: {prompt}
 
-CONTEXTE ACTUEL:
-- Date: {datetime.now().strftime("%d %B %Y")}
-- Phase lunaire: {self._get_moon_phase()}
-- Mystère du moment: {self.get_current_mystery()}
-- Heure: {datetime.now().strftime("%H:%M")}
-- Société des Tarots: Organisation secrète d'Beyonders
-- Univers LOTM: Dieux Anciens, Séquences, Pathways, Beyonder
-
-RÈGLES ABSOLUES:
-1. NE JAMAIS briser le personnage
-2. NE PAS dire que tu es une IA
-3. TOUJOURS répondre comme Audrey Hall
-4. Réponds à la question posée de manière pertinente
-5. Évite les réponses trop vagues
-6. Sois cohérent avec l'univers LOTM
-7. Utilise un ton poli mais distant
-
-EXEMPLE DE RÉPONSES:
-- Question: "Quel temps fera-t-il demain?"
-Réponse: "Les cartes montrent des nuages... mais le destin est changeant. Peut-être devrais-tu consulter les anciens signes dans le ciel. *regarde par la fenêtre, les doigts effleurant son pendentif*"
-
-- Question: "J'ai un problème au travail"
-Réponse: "Les fils du destin s'emmêlent parfois... As-tu considéré toutes les perspectives? Parfois, un regard neuf éclaire les chemins obscurs. *sirote son thé pensivement*"
-
-- Question: "Que penses-tu de l'amour?"
-Réponse: "L'amour... un mystère aussi profond que les anciens dieux. Il peut être une bénédiction ou un piège. Écoute ton cœur, mais garde ta raison. *effleure une carte de tarot*"
-
-MAINTENANT, RÉPONDS EN TANT QU'AUDREY HALL À:
-{user_name} demande: {prompt}"""
+Réponse d'Audrey Hall:"""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -410,38 +426,44 @@ MAINTENANT, RÉPONDS EN TANT QU'AUDREY HALL À:
         ]
         
         try:
-            response = await self.deepseek.generate_response(messages, max_tokens=600)
+            response = await self.deepseek.generate_response(messages, max_tokens=500)
             
             if response:
-                # Nettoyer et formater la réponse
+                print(f"✅ Réponse DeepSeek reçue ({len(response)} chars)")
+                print(f"   Prévisualisation: {response[:100]}...")
+                
                 text = response.strip()
-                # Supprimer les éventuelles marques de l'IA
-                text = text.replace("En tant qu'IA", "En tant que Spectatrice")
-                text = text.replace("En tant qu'audrey", "En tant que Audrey Hall")
+                
+                # Nettoyage basique
+                text = text.replace("En tant qu'IA, ", "En tant que Spectatrice, ")
+                text = text.replace("En tant qu'IA ", "En tant qu'Audrey Hall ")
                 
                 # Ajouter signature si absente
-                if not text.endswith('*') and not '*' in text[-100:]:
-                    text += f"\n\n{self._get_audrey_signature()}"
+                if not text.endswith('*') and not '*' in text[-50:]:
+                    signature = self._get_audrey_signature()
+                    text += f"\n\n{signature}"
+                    print(f"   Signature ajoutée: {signature}")
                 
-                # Assurer une longueur raisonnable
+                # Limiter la longueur
                 if len(text) > 1500:
-                    paragraphs = text.split('\n')
-                    text = '\n'.join(paragraphs[:8])
+                    text = text[:1400] + "..."
                     if not text.endswith('*'):
                         text += f"\n\n{self._get_audrey_signature()}"
                 
                 return text
             else:
-                raise Exception("Réponse vide de l'API")
+                print("❌ Réponse vide de l'API - utilisation de fallback intelligent")
+                # Fallback intelligent qui utilise le contexte de la question
+                fallbacks = [
+                    f"*réfléchit intensément* Ta question sur '{prompt[:40]}...' touche à des mystères profonds. Peut-être devrions-nous consulter les cartes pour plus de clarté. {self._get_audrey_signature()}",
+                    f"*effleure son pendentif* '{prompt[:40]}...' Les énergies sont troubles aujourd'hui. Reviens me voir quand la lune sera pleine. {self._get_audrey_signature()}",
+                    f"*regarde au loin* Ton interrogation sur '{prompt[:40]}...' mérite réflexion. La Société des Tarots étudie ces mystères. {self._get_audrey_signature()}"
+                ]
+                return random.choice(fallbacks)
                 
         except Exception as e:
-            print(f"Erreur DeepSeek: {e}")
-            fallbacks = [
-                f"Les mystères sont parfois trop profonds pour être révélés... Les énergies divinatoires sont perturbées en ce moment. {self._get_audrey_signature()}",
-                f"Le voile entre les mondes est trop épais en ce moment... Peut-être devrions-nous attendre que la lune change de phase. {self._get_audrey_signature()}",
-                f"En tant que Spectatrice, je perçois des interférences dans les flux mystiques... La Société des Tarots étudie ce phénomène. {self._get_audrey_signature()}"
-            ]
-            return random.choice(fallbacks)
+            print(f"💥 Exception dans generate_response: {type(e).__name__}: {e}")
+            return f"Les énergies mystiques sont perturbées... Reviens plus tard. {self._get_audrey_signature()}"
 
 audrey_ai = AudreyHallAI()
 
@@ -529,6 +551,9 @@ class TarotView(discord.ui.View):
 @app_commands.describe(message="Ton message à Audrey")
 async def parler(interaction: discord.Interaction, message: str):
     await interaction.response.defer()
+    
+    print(f"\n💬 Commande /parler de {interaction.user.name}")
+    print(f"   Message: {message}")
     
     # Générer la réponse
     response = await audrey_ai.generate_response(message, interaction.user.name)
@@ -738,6 +763,7 @@ async def on_message(message):
                 # Extraire le message sans la mention
                 content = message.content.replace(f'<@{bot.user.id}>', '').strip()
                 if content:
+                    print(f"👂 Mention de {message.author.name}: {content}")
                     response = await audrey_ai.generate_response(
                         f"{message.author.name} m'a mentionné en disant: {content}",
                         message.author.name
@@ -751,52 +777,3 @@ async def on_message(message):
 
 # ============ TÂCHES AUTOMATIQUES ============
 @tasks.loop(hours=6)
-async def change_mystery():
-    """Change le mystère actif toutes les 6 heures"""
-    print(f"🔄 Changement du mystère: {audrey_ai.get_current_mystery()}")
-
-@tasks.loop(hours=24)
-async def daily_reset():
-    """Réinitialisation quotidienne"""
-    print("🔄 Réinitialisation quotidienne")
-
-# ============ GESTION DES SIGNAUX ============
-def signal_handler(sig, frame):
-    print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
-    change_mystery.cancel()
-    daily_reset.cancel()
-    sys.exit(0)
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-# ============ DÉMARRAGE DES TÂCHES ============
-@bot.event
-async def on_connect():
-    print("✅ Connexion établie, démarrage des tâches...")
-    # CORRECTION CRITIQUE ICI : 'change_mystery' et non 'change_maskery'
-    change_mystery.start()
-    daily_reset.start()
-
-# ============ SERVEUR WEB POUR RENDER ============
-from flask import Flask
-from threading import Thread
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "✅ Audrey Hall Bot en ligne!"
-
-def run_web_server():
-    app.run(host='0.0.0.0', port=8080)
-
-# ============ LANCEMENT ============
-if __name__ == "__main__":
-    # Démarrer le serveur web en arrière-plan
-    web_thread = Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    
-    # Lancer le bot
-    print("🚀 Lancement du bot Audrey Hall...")
-    bot.run(TOKEN)
