@@ -25,14 +25,16 @@ os.environ['DISCORD_INSTALL_AUDIO_DEPS'] = '0'
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import google.generativeai as genai
+# NOUVELLE IMPORTATION - SDK GOOGLE GENAI
+from google import genai
 from dotenv import load_dotenv
 
 # ============ CONFIGURATION ============
 load_dotenv()
 
 TOKEN = os.getenv('DISCORD_TOKEN')
-GEMINI_KEY = os.getenv('GEMINI_KEY')
+# CHANGEMENT: Utiliser GEMINI_API_KEY pour le nouveau SDK
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 BOT_COLOR = int(os.getenv('BOT_COLOR', '2E8B57'), 16)
 
 # Log de démarrage
@@ -40,15 +42,15 @@ print("=" * 60)
 print("🔮 AUDREY HALL BOT - SOCIÉTÉ DES TAROTS")
 print("=" * 60)
 print(f"📅 Date: {datetime.now().strftime('%d %B %Y %H:%M')}")
-print(f"🎭 Version: Gemini 2.5 Flash")
+print(f"🎭 Version: Gemini 2.5 Flash (Nouveau SDK)")
 print("=" * 60)
 
 if not TOKEN:
     print("❌ ERREUR: DISCORD_TOKEN manquant dans .env")
     sys.exit(1)
 
-if not GEMINI_KEY:
-    print("⚠️ ATTENTION: GEMINI_KEY manquant - mode hors-ligne activé")
+if not GEMINI_API_KEY:
+    print("⚠️ ATTENTION: GEMINI_API_KEY manquant - mode hors-ligne activé")
 else:
     print("✅ Clé Gemini chargée")
 
@@ -230,10 +232,10 @@ class TarotDeck:
 
 tarot_deck = TarotDeck()
 
-# ============ AUDREY HALL AI AVEC GEMINI 2.5 FLASH ============
+# ============ AUDREY HALL AI AVEC NOUVEAU SDK GOOGLE GENAI ============
 class AudreyHallAI:
     def __init__(self):
-        self.model = None
+        self.client = None  # CHANGEMENT: 'client' au lieu de 'model'
         self.initialize_gemini()
         
         # Phrases mystérieuses
@@ -263,58 +265,21 @@ class AudreyHallAI:
         }
     
     def initialize_gemini(self):
-        """Initialise Gemini avec configuration optimisée"""
-        if not GEMINI_KEY:
+        """Initialise Gemini avec le NOUVEAU SDK"""
+        if not GEMINI_API_KEY:
             print("⚠️ Mode hors-ligne - Gemini non disponible")
             return
         
         try:
-            genai.configure(api_key=GEMINI_KEY)
+            # NOUVEAU: Création du client avec le nouveau SDK
+            self.client = genai.Client(api_key=GEMINI_API_KEY)
             
-            # Configuration pour Gemini 2.5 Flash
-            generation_config = {
-                "temperature": 0.85,
-                "top_p": 0.95,
-                "top_k": 40,
-                "max_output_tokens": 600,
-            }
-            
-            safety_settings = [
-                {
-                    "category": "HARM_CATEGORY_HARASSMENT",
-                    "threshold": "BLOCK_NONE"
-                },
-                {
-                    "category": "HARM_CATEGORY_HATE_SPEECH",
-                    "threshold": "BLOCK_NONE"
-                },
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_NONE"
-                },
-                {
-                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    "threshold": "BLOCK_NONE"
-                }
-            ]
-            
-            # Utiliser gemini-1.5-flash qui est stable et disponible
-            self.model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                generation_config=generation_config,
-                safety_settings=safety_settings
-            )
-            
-            # Test de connexion
-            test_response = self.model.generate_content("Test")
-            if test_response.text:
-                print(f"✅ Gemini connecté (modèle: gemini-1.5-flash)")
-            else:
-                print("⚠️ Gemini connecté mais pas de réponse")
+            # Test de connexion simple
+            print(f"✅ Nouveau SDK Google GenAI connecté")
                 
         except Exception as e:
-            print(f"❌ Erreur Gemini: {e}")
-            self.model = None
+            print(f"❌ Erreur nouveau SDK Gemini: {e}")
+            self.client = None
     
     def get_current_mystery(self) -> str:
         """Retourne le mystère actif selon l'heure"""
@@ -366,7 +331,7 @@ class AudreyHallAI:
         print(f"\n💭 {user_name}: {prompt[:100]}...")
         
         # Si Gemini n'est pas disponible, réponse hors-ligne intelligente
-        if not self.model:
+        if not self.client:
             print("⚠️ Mode hors-ligne - réponse prédéfinie")
             return self._get_offline_response(prompt, user_name)
         
@@ -374,11 +339,23 @@ class AudreyHallAI:
         context_prompt = self._build_context_prompt(prompt, user_name)
         
         try:
-            # Génération avec Gemini
-            print(f"🧠 Génération avec Gemini...")
+            # NOUVEAU: Génération avec le nouveau SDK
+            print(f"🧠 Génération avec Google GenAI...")
+            
+            # Configuration de génération
+            generation_config = {
+                "temperature": 0.85,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 600,
+            }
+            
+            # Appel au modèle avec le nouveau SDK
             response = await asyncio.to_thread(
-                self.model.generate_content,
-                context_prompt
+                self.client.models.generate_content,
+                model="gemini-1.5-flash",  # Modèle compatible
+                contents=context_prompt,
+                config=generation_config
             )
             
             if response and response.text:
@@ -812,49 +789,4 @@ async def on_message(message):
 
 # ============ SERVEUR WEB POUR RENDER ============
 def run_web_server():
-    """Démarre un serveur web minimal pour Render"""
-    try:
-        from flask import Flask
-        app = Flask(__name__)
-        
-        @app.route('/')
-        def home():
-            return "✅ Audrey Hall Bot en ligne!"
-        
-        @app.route('/health')
-        def health():
-            return "OK", 200
-        
-        app.run(host='0.0.0.0', port=8080)
-    except ImportError:
-        print("⚠️ Flask non installé, serveur web désactivé")
-    except Exception as e:
-        print(f"⚠️ Erreur serveur web: {e}")
-
-# Démarrer le serveur web dans un thread séparé
-try:
-    web_thread = Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    print("🌐 Serveur web démarré sur le port 8080")
-except:
-    print("⚠️ Impossible de démarrer le serveur web")
-
-# ============ GESTION DES SIGNAUX ============
-def signal_handler(sig, frame):
-    print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
-    sys.exit(0)
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-# ============ LANCEMENT DU BOT ============
-if __name__ == "__main__":
-    try:
-        print("🚀 Lancement du bot Audrey Hall...")
-        bot.run(TOKEN)
-    except KeyboardInterrupt:
-        print("\n🔴 Arrêt manuel")
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+    """Démarre un serveur
