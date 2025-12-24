@@ -19,9 +19,18 @@ from dotenv import load_dotenv
 # ============ CONFIGURATION ============
 load_dotenv()
 
+# VALIDATION DES VARIABLES D'ENVIRONNEMENT (CORRECTION AJOUTÉE)
 TOKEN = os.getenv('DISCORD_TOKEN')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 BOT_COLOR = int(os.getenv('BOT_COLOR', '2E8B57'), 16)  # Vert mystérieux
+
+# Validation cruciale pour éviter les crashs silencieux
+if not TOKEN:
+    print("❌ ERREUR FATALE : La variable 'DISCORD_TOKEN' est manquante.")
+    sys.exit(1)
+if not DEEPSEEK_API_KEY:
+    print("❌ ERREUR FATALE : La variable 'DEEPSEEK_API_KEY' est manquante.")
+    sys.exit(1)
 
 intents = discord.Intents.all()
 bot = commands.Bot(
@@ -765,7 +774,8 @@ signal.signal(signal.SIGINT, signal_handler)
 @bot.event
 async def on_connect():
     print("✅ Connexion établie, démarrage des tâches...")
-    change_maskery.start()
+    # CORRECTION CRITIQUE ICI : 'change_mystery' et non 'change_maskery'
+    change_mystery.start()
     daily_reset.start()
 
 # ============ SERVEUR WEB POUR RENDER ============
@@ -779,13 +789,4 @@ def home():
     return "✅ Audrey Hall Bot en ligne!"
 
 def run_web_server():
-    app.run(host='0.0.0.0', port=8080)
-
-# ============ LANCEMENT ============
-if __name__ == "__main__":
-    # Démarrer le serveur web en arrière-plan
-    web_thread = Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    
-    # Lancer le bot
-    print
+    app.run(host='0.0
