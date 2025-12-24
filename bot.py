@@ -777,3 +777,51 @@ async def on_message(message):
 
 # ============ TÂCHES AUTOMATIQUES ============
 @tasks.loop(hours=6)
+async def change_mystery():
+    """Change le mystère actif toutes les 6 heures"""
+    print(f"🔄 Changement du mystère: {audrey_ai.get_current_mystery()}")
+
+@tasks.loop(hours=24)
+async def daily_reset():
+    """Réinitialisation quotidienne"""
+    print("🔄 Réinitialisation quotidienne")
+
+# ============ GESTION DES SIGNAUX ============
+def signal_handler(sig, frame):
+    print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
+    change_mystery.cancel()
+    daily_reset.cancel()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# ============ DÉMARRAGE DES TÂCHES ============
+@bot.event
+async def on_connect():
+    print("✅ Connexion établie, démarrage des tâches...")
+    change_mystery.start()
+    daily_reset.start()
+
+# ============ SERVEUR WEB POUR RENDER ============
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "✅ Audrey Hall Bot en ligne!"
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=8080)
+
+# ============ LANCEMENT ============
+if __name__ == "__main__":
+    # Démarrer le serveur web en arrière-plan
+    web_thread = Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    
+    # Lancer le bot
+    print("🚀 Lancement du bot Audrey Hall...")
+    bot.run(TOKEN)
