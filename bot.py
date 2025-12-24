@@ -684,9 +684,23 @@ def run_web_server():
 web_thread = Thread(target=run_web_server, daemon=True)
 web_thread.start()
 
+... [votre code des tâches] ...
+
 # ============ LANCEMENT ============
-if __name__ == "__main__":
-    # ... votre code de lancement normal ...
+from flask import Flask
+from threading import Thread
+
+# Mini serveur web pour Render
+app = Flask('')
+@app.route('/')
+def home():
+    return "✅ Audrey Hall Bot en ligne!"
+def run_web_server():
+    app.run(host='0.0.0.0', port=8080)
+web_thread = Thread(target=run_web_server, daemon=True)
+web_thread.start()
+
+# ============ LANCEMENT DU BOT ============
 if __name__ == "__main__":
     # Gestion des signaux
     import signal
