@@ -276,7 +276,8 @@ class AudreyHallAI:
             
             # Test de connexion simple
             print(f"✅ Nouveau SDK Google GenAI connecté")
-            print(f"🎭 Modèle disponible: gemini-2.0-flash-exp")
+            # CORRECTION: Modèle cible indiqué correctement
+            print(f"🎭 Modèle cible: gemini-2.5-flash")
                 
         except Exception as e:
             print(f"❌ Erreur nouveau SDK Gemini: {e}")
@@ -341,13 +342,13 @@ class AudreyHallAI:
         context_prompt = self._build_context_prompt(prompt, user_name)
         
         try:
-            # NOUVEAU: Génération avec le nouveau SDK - CORRIGÉ
-            print(f"🧠 Génération avec Google GenAI (gemini-2.0-flash-exp)...")
+            # CORRECTION: Utilisation de gemini-2.5-flash
+            print(f"🧠 Génération avec Google GenAI (gemini-2.5-flash)...")
             
-            # CORRECTION ICI: Appel correct à l'API
+            # CORRECTION: Appel correct à l'API avec le bon modèle
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
-                model="gemini-2.0-flash-exp",  # Modèle compatible actuellement
+                model="gemini-2.5-flash",  # CORRECTION: Modèle stable standard
                 contents=context_prompt,
                 config={
                     "temperature": 0.85,
@@ -775,12 +776,4 @@ async def on_message(message):
             async with message.channel.typing():
                 response = await audrey_ai.generate_response(
                     f"{message.author.name} m'a mentionné en disant: {message.content}",
-                    message.author.name
-                )
-                
-                embed = discord.Embed(
-                    description=response,
-                    color=BOT_COLOR
-                )
-                
-                await message.reply
+                    message
