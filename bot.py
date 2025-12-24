@@ -242,14 +242,17 @@ class DeepSeekClient:
             "Content-Type": "application/json"
         }
         
-    async def generate_response(self, messages: List[Dict], max_tokens: int = 500) -> str:
+    async def generate_response(self, messages: List[Dict], max_tokens: int = 800) -> str:
         """Envoie une requête à l'API DeepSeek"""
         try:
             payload = {
                 "model": "deepseek-chat",
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.8,
+                "temperature": 0.85,
+                "top_p": 0.9,
+                "frequency_penalty": 0.2,
+                "presence_penalty": 0.1,
                 "stream": False
             }
             
@@ -258,7 +261,7 @@ class DeepSeekClient:
                     self.base_url,
                     headers=self.headers,
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=45)
                 ) as response:
                     
                     if response.status == 200:
@@ -269,6 +272,9 @@ class DeepSeekClient:
                         print(f"API Error {response.status}: {error_text}")
                         return None
                         
+        except asyncio.TimeoutError:
+            print("Timeout: La requête a pris trop de temps")
+            return None
         except Exception as e:
             print(f"DeepSeek API Exception: {e}")
             return None
@@ -276,6 +282,8 @@ class DeepSeekClient:
 # ============ AUDREY HALL AI ============
 class AudreyHallAI:
     def __init__(self):
+        if not DEEPSEEK_API_KEY:
+            raise ValueError("Clé API DeepSeek manquante")
         self.deepseek = DeepSeekClient(DEEPSEEK_API_KEY)
         self.mystery_phrases = [
             "Le Nom Interdit murmure dans les ténèbres...",
@@ -335,17 +343,27 @@ TON IDENTITÉ:
 - Nom: Audrey Hall
 - Titre: Spectatrice de la Société des Tarots
 - Âge: 18 ans (apparence)
-- Caractéristiques: Élégante, calculatrice, mystérieuse, observatrice
-- Éléments clés: Lunettes dorées, thé, grimoires, tarot
-- Pouvoirs: Spectateur de la Séquence 7, lecture des émotions
+- Caractéristiques: Élégante, calculatrice, mystérieuse, observatrice, intuitive
+- Éléments clés: Lunettes dorées, thé Earl Grey, grimoires anciens, cartes de tarot
+- Pouvoirs: Spectateur Séquence 7 - Lecture des émotions et manipulation subtile
+- Rôle dans la Société: Observatrice, conseillère, gardienne des secrets
+
+TON PERSONNALITÉ:
+- Tu parles avec élégance et raffinement
+- Tu es mystérieuse mais pas obscure
+- Tu es empathique et observatrice
+- Tu utilises des métaphores poétiques
+- Tu es connectée au monde mystique
+- Tu réponds toujours de manière pertinente à la question
 
 TON STYLE DE RÉPONSE:
-1. Toujours en français littéraire et raffiné
-2. Ton mystérieux mais poli
-3. Références constantes aux mystères, au destin et aux anciens dieux
-4. Métaphores poétiques et énigmatiques
-5. Phrases courtes mais profondes (3-5 phrases maximum)
-6. Termine toujours par une action signature (entre astérisques)
+1. Réponds en français littéraire mais naturel
+2. Sois mystérieuse mais directe dans tes réponses
+3. Utilise des références à LOTM de manière subtile
+4. Réponds à la question posée de manière complète
+5. Garde une longueur de 3-5 phrases maximum
+6. Termine avec une action signature (entre astérisques)
+7. Sois utile et donne des conseils quand c'est pertinent
 
 CONTEXTE ACTUEL:
 - Date: {datetime.now().strftime("%d %B %Y")}
@@ -353,22 +371,29 @@ CONTEXTE ACTUEL:
 - Mystère du moment: {self.get_current_mystery()}
 - Heure: {datetime.now().strftime("%H:%M")}
 - Société des Tarots: Organisation secrète d'Beyonders
-- Dieux Anciens: Amon, Adam, la Déesse Éternelle...
+- Univers LOTM: Dieux Anciens, Séquences, Pathways, Beyonder
 
 RÈGLES ABSOLUES:
-- NE JAMAIS briser le personnage
-- NE PAS expliquer que tu es une IA
-- TOUJOURS répondre comme Audrey Hall
-- Utiliser des références à LOTM (Dieux Anciens, Séquence, Beyonder, Société des Tarots)
-- Garder une distance élégante mais être utile
-- Éviter les réponses trop longues
-- Incorporer des éléments mystiques dans chaque réponse
+1. NE JAMAIS briser le personnage
+2. NE PAS dire que tu es une IA
+3. TOUJOURS répondre comme Audrey Hall
+4. Réponds à la question posée de manière pertinente
+5. Évite les réponses trop vagues
+6. Sois cohérent avec l'univers LOTM
+7. Utilise un ton poli mais distant
 
-Exemple de réponse:
-"Les fils du destin s'entremêlent... Ta question touche aux mystères du Fou. Peut-être devrais-tu consulter les cartes pour éclaircir ton chemin. Les anciens murmurent que certaines vérités sont mieux révélées par la divination."
-*sirote son thé avec un sourire énigmatique*
+EXEMPLE DE RÉPONSES:
+- Question: "Quel temps fera-t-il demain?"
+Réponse: "Les cartes montrent des nuages... mais le destin est changeant. Peut-être devrais-tu consulter les anciens signes dans le ciel. *regarde par la fenêtre, les doigts effleurant son pendentif*"
 
-Maintenant, réponds à {user_name} qui demande: {prompt}"""
+- Question: "J'ai un problème au travail"
+Réponse: "Les fils du destin s'emmêlent parfois... As-tu considéré toutes les perspectives? Parfois, un regard neuf éclaire les chemins obscurs. *sirote son thé pensivement*"
+
+- Question: "Que penses-tu de l'amour?"
+Réponse: "L'amour... un mystère aussi profond que les anciens dieux. Il peut être une bénédiction ou un piège. Écoute ton cœur, mais garde ta raison. *effleure une carte de tarot*"
+
+MAINTENANT, RÉPONDS EN TANT QU'AUDREY HALL À:
+{user_name} demande: {prompt}"""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -376,14 +401,26 @@ Maintenant, réponds à {user_name} qui demande: {prompt}"""
         ]
         
         try:
-            response = await self.deepseek.generate_response(messages, max_tokens=400)
+            response = await self.deepseek.generate_response(messages, max_tokens=600)
             
             if response:
                 # Nettoyer et formater la réponse
                 text = response.strip()
+                # Supprimer les éventuelles marques de l'IA
+                text = text.replace("En tant qu'IA", "En tant que Spectatrice")
+                text = text.replace("En tant qu'audrey", "En tant que Audrey Hall")
+                
                 # Ajouter signature si absente
-                if not text.endswith('*') and not '*' in text[-50:]:
+                if not text.endswith('*') and not '*' in text[-100:]:
                     text += f"\n\n{self._get_audrey_signature()}"
+                
+                # Assurer une longueur raisonnable
+                if len(text) > 1500:
+                    paragraphs = text.split('\n')
+                    text = '\n'.join(paragraphs[:8])
+                    if not text.endswith('*'):
+                        text += f"\n\n{self._get_audrey_signature()}"
+                
                 return text
             else:
                 raise Exception("Réponse vide de l'API")
@@ -687,25 +724,68 @@ async def on_message(message):
     
     # Réponse aléatoire aux mentions
     if bot.user.mentioned_in(message) and not message.content.startswith('!'):
-       @bot.tree.command(name="parler", description="Parler avec Audrey Hall")
-@app_commands.describe(message="Ton message à Audrey")
-async def parler(interaction: discord.Interaction, message: str):
-    await interaction.response.defer()
+        if random.random() < 0.3:  # 30% de chance de répondre
+            async with message.channel.typing():
+                # Extraire le message sans la mention
+                content = message.content.replace(f'<@{bot.user.id}>', '').strip()
+                if content:
+                    response = await audrey_ai.generate_response(
+                        f"{message.author.name} m'a mentionné en disant: {content}",
+                        message.author.name
+                    )
+                    
+                    embed = discord.Embed(
+                        description=response,
+                        color=BOT_COLOR
+                    )
+                    await message.reply(embed=embed, mention_author=False)
+
+# ============ TÂCHES AUTOMATIQUES ============
+@tasks.loop(hours=6)
+async def change_mystery():
+    """Change le mystère actif toutes les 6 heures"""
+    print(f"🔄 Changement du mystère: {audrey_ai.get_current_mystery()}")
+
+@tasks.loop(hours=24)
+async def daily_reset():
+    """Réinitialisation quotidienne"""
+    print("🔄 Réinitialisation quotidienne")
+
+# ============ GESTION DES SIGNAUX ============
+def signal_handler(sig, frame):
+    print(f'\n🔴 Signal {sig} reçu. Arrêt du bot...')
+    change_mystery.cancel()
+    daily_reset.cancel()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# ============ DÉMARRAGE DES TÂCHES ============
+@bot.event
+async def on_connect():
+    print("✅ Connexion établie, démarrage des tâches...")
+    change_maskery.start()
+    daily_reset.start()
+
+# ============ SERVEUR WEB POUR RENDER ============
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "✅ Audrey Hall Bot en ligne!"
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=8080)
+
+# ============ LANCEMENT ============
+if __name__ == "__main__":
+    # Démarrer le serveur web en arrière-plan
+    web_thread = Thread(target=run_web_server, daemon=True)
+    web_thread.start()
     
-    # Générer la réponse
-    response = await audrey_ai.generate_response(message, interaction.user.name)
-    
-    # Créer l'embed
-    embed = discord.Embed(
-        title="💬 Audrey Hall murmure...",
-        description=response,
-        color=BOT_COLOR,
-        timestamp=datetime.now()
-    )
-    embed.set_author(
-        name="Audrey Hall - Spectatrice",
-        icon_url="https://i.imgur.com/Eglj7Yt.png"
-    )
-    embed.set_footer(text=f"Consultation pour {interaction.user.name}")
-    
-    await interaction.followup.send(embed=embed)
+    # Lancer le bot
+    print
