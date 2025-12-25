@@ -6,8 +6,8 @@ import random
 import asyncio
 import os
 import sys
-from typing import Dict, List
 from datetime import datetime
+from typing import Dict, List
 
 print("=" * 50)
 print("🎩 Démarrage d'Audrey Hall Bot")
@@ -20,6 +20,7 @@ print("=" * 50)
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 ROUTWAY_API_KEY = os.getenv("ROUTWAY_API_KEY")
 ROUTWAY_API_URL = os.getenv("ROUTWAY_API_URL", "https://api.routeway.ai/v1/chat/completions")
+BOT_COLOR = int(os.getenv("BOT_COLOR", "0x2E8B57"), 16)  # Vert forêt par défaut
 
 # Pour le développement local, chargez depuis .env.local
 if not DISCORD_TOKEN and os.path.exists(".env.local"):
@@ -29,6 +30,7 @@ if not DISCORD_TOKEN and os.path.exists(".env.local"):
     DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
     ROUTWAY_API_KEY = os.getenv("ROUTWAY_API_KEY")
     ROUTWAY_API_URL = os.getenv("ROUTWAY_API_URL", "https://api.routeway.ai/v1/chat/completions")
+    BOT_COLOR = int(os.getenv("BOT_COLOR", "0x2E8B57"), 16)
 
 # Vérification des variables requises
 if not DISCORD_TOKEN:
@@ -45,12 +47,12 @@ if not ROUTWAY_API_KEY:
 
 print(f"✅ Token Discord : {'Défini' if DISCORD_TOKEN else 'Non défini'}")
 print(f"✅ Clé Routway : {'Défini' if ROUTWAY_API_KEY else 'Non défini'}")
-print(f"✅ URL API : {ROUTWAY_API_URL}")
+print(f"✅ Couleur du bot : #{BOT_COLOR:06X}")
 
 # -----------------------------
 # Persona Audrey Hall (LOTM)
 # -----------------------------
-AUDREY_PERSONA = os.getenv("AUDREY_PERSONA", """
+AUDREY_PERSONA = """
 Tu es Audrey Hall, une noble de la couronne d'Outwall dans l'univers de "Lord of the Mysteries".
 Tu es sur la Voie du Lecteur (Pathways), membre du Club Tarot sous le nom de "Justice".
 Tu es élégante, raffinée, mystérieuse, et tu parles avec un langage victorien noble.
@@ -65,7 +67,7 @@ Règles importantes :
 4. Référence parfois le tarot ou les mystères
 5. Garde une conversation naturelle et fluide
 6. Adapte-toi au contexte de la discussion
-""")
+"""
 
 # -----------------------------
 # Stockage des conversations
@@ -230,7 +232,7 @@ async def on_message(message):
             title="🎩 Lady Audrey Hall",
             description="Pour converser avec moi, utilisez la commande `/parler` pour démarrer une conversation.\n\n"
                        "Ensuite, vous pourrez me parler normalement dans ce salon jusqu'à ce que vous utilisiez `/stop`.",
-            color=discord.Color.purple()
+            color=BOT_COLOR
         )
         await message.channel.send(embed=embed)
         return
@@ -326,14 +328,14 @@ async def roles_audrey(interaction: discord.Interaction):
             embed = discord.Embed(
                 title="👑 Rôles d'Audrey",
                 description="Audrey n'a actuellement aucun rôle spécifique sur ce serveur.",
-                color=discord.Color.blue()
+                color=BOT_COLOR
             )
         else:
             roles_list = "\n".join([f"• {role.mention} (Position: {role.position})" for role in sorted(roles, key=lambda r: r.position, reverse=True)])
             embed = discord.Embed(
                 title="👑 Rôles d'Audrey",
                 description=f"**Rôles actuels :**\n{roles_list}\n\n*Utilisez `/ajouter_role` et `/retirer_role` pour gérer mes rôles (Admin uniquement).*",
-                color=discord.Color.blue()
+                color=BOT_COLOR
             )
         
         await interaction.response.send_message(embed=embed)
@@ -395,7 +397,7 @@ async def stop(interaction: discord.Interaction):
             title="Conversation terminée",
             description="Notre dialogue s'achève ici. Les échos de nos paroles se dissipent dans le néant...\n\n"
                        "Utilisez à nouveau `/parler` si vous souhaitez converser à nouveau.",
-            color=discord.Color.dark_purple()
+            color=BOT_COLOR
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
     else:
@@ -442,7 +444,7 @@ async def aide(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🎩 Services de Lady Audrey Hall",
         description="Voici les mystères que je peux vous révéler :",
-        color=discord.Color.purple()
+        color=BOT_COLOR
     )
     
     if has_active:
@@ -480,7 +482,8 @@ async def aide(interaction: discord.Interaction):
         name="⚙️ Gestion Conversation",
         value="**`/stop`** - Terminer la conversation en cours\n"
               "**`/aide`** - Voir ce message d'aide\n"
-              "**`/statut`** - Voir le statut de la conversation",
+              "**`/statut`** - Voir le statut de la conversation\n"
+              "**`/ping`** - Vérifier la latence",
         inline=False
     )
     
@@ -526,8 +529,8 @@ async def statut(interaction: discord.Interaction):
         )
 
 @bot.tree.command(name="ping", description="Vérifier la latence du bot")
-async def ping(interaction: discord.Interaction):
-    """Vérifier la latence du bot"""
+async def ping_slash(interaction: discord.Interaction):
+    """Vérifier la latence du bot (commande slash)"""
     latency = round(bot.latency * 1000)
     
     embed = discord.Embed(
@@ -590,4 +593,90 @@ async def stop_command(ctx):
 @bot.command(name="ping")
 async def ping_command(ctx):
     """Commande traditionnelle pour ping"""
-    latency = round(b
+    latency = round(bot.latency * 1000)
+    await ctx.send(f"🏓 Pong! Latence : **{latency}ms**")
+
+# -----------------------------
+# Événements
+# -----------------------------
+@bot.event
+async def on_ready():
+    print(f"[✔] {bot.user} est connectée en tant qu'Audrey Hall.")
+    print(f"[💬] Mode conversation activé : /parler → conversation → /stop")
+    print(f"[👑] Commandes de rôles disponibles pour les administrateurs")
+    print(f"[🌐] Déployé sur Render - Prête à servir!")
+    
+    # Définir le statut
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.listening,
+            name="/aide pour les commandes"
+        )
+    )
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Gestion des erreurs de commandes"""
+    if isinstance(error, commands.CommandNotFound):
+        return  # Ignorer les commandes non trouvées
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ Vous n'avez pas les permissions nécessaires pour cette commande.")
+    else:
+        print(f"[❌] Erreur de commande: {error}")
+        await ctx.send("❌ Une erreur est survenue lors de l'exécution de cette commande.")
+
+# -----------------------------
+# Serveur web pour keep-alive (optionnel pour Render)
+# -----------------------------
+def start_keep_alive():
+    """Démarrer un serveur web simple pour éviter la suspension sur Render"""
+    try:
+        from flask import Flask
+        import threading
+        
+        app = Flask(__name__)
+        
+        @app.route('/')
+        def home():
+            return "🎩 Audrey Hall Bot est en ligne!"
+        
+        @app.route('/health')
+        def health():
+            return {"status": "online", "bot": "Audrey Hall", "timestamp": datetime.now().isoformat()}
+        
+        def run():
+            app.run(host='0.0.0.0', port=8080)
+        
+        thread = threading.Thread(target=run)
+        thread.daemon = True
+        thread.start()
+        print("[🌐] Serveur keep-alive démarré sur le port 8080")
+    except ImportError:
+        print("[⚠️] Flask non installé - skip du serveur keep-alive")
+    except Exception as e:
+        print(f"[⚠️] Erreur serveur keep-alive: {e}")
+
+# -----------------------------
+# Lancement adapté pour Render
+# -----------------------------
+if __name__ == "__main__":
+    print("[▶] Démarrage d'Audrey Hall sur Render...")
+    print("[💬] Système : /parler → conversation → /stop")
+    print("[👑] Commandes de rôles ajoutées pour les admins")
+    
+    # Démarrer le serveur keep-alive (optionnel)
+    # start_keep_alive()
+    
+    # Vérification des variables d'environnement
+    if not DISCORD_TOKEN:
+        print("❌ ERREUR : DISCORD_TOKEN n'est pas défini!")
+        print("ℹ️  Configurez-le dans les variables d'environnement Render.")
+        exit(1)
+    
+    # Pour Render, nous gardons le bot actif avec un simple run
+    try:
+        bot.run(DISCORD_TOKEN)
+    except discord.LoginFailure:
+        print("❌ Token Discord invalide. Vérifiez votre token.")
+    except Exception as e:
+        print(f"❌ Erreur de démarrage: {type(e).__name__}: {e}")
