@@ -5,29 +5,52 @@ import aiohttp
 import random
 import asyncio
 import os
+import sys
 from typing import Dict, List
 from datetime import datetime
 
-# -----------------------------
-# Configuration - VARIABLES D'ENVIRONNEMENT pour Render
-# -----------------------------
-ROUTWAY_API_KEY = os.getenv("ROUTWAY_API_KEY", "sk-bwtTubWVo2PUfAPC9VeRSHIZf71QL8XzI11qMPUXZ-codxfNNdByyGQr5XLd3flcl6m7bUhyOtyAGHJ5Kf0p-dpd9A")
-ROUTWAY_API_URL = os.getenv("ROUTWAY_API_URL", "https://api.routeway.ai/v1/chat/completions")
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+print("=" * 50)
+print("🎩 Démarrage d'Audrey Hall Bot")
+print("=" * 50)
 
-# Vérifier que le token Discord est configuré
-if DISCORD_TOKEN is None:
-    print("❌ ERREUR : DISCORD_TOKEN n'est pas défini dans les variables d'environnement!")
-    print("ℹ️  Configurez-le sur le dashboard Render :")
-    print("   1. Allez sur votre service Web")
-    print("   2. Cliquez sur 'Environment'")
-    print("   3. Ajoutez DISCORD_TOKEN avec votre token de bot")
-    exit(1)
+# -----------------------------
+# Configuration - VARIABLES D'ENVIRONNEMENT
+# -----------------------------
+# Chargement depuis les variables d'environnement Render
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+ROUTWAY_API_KEY = os.getenv("ROUTWAY_API_KEY")
+ROUTWAY_API_URL = os.getenv("ROUTWAY_API_URL", "https://api.routeway.ai/v1/chat/completions")
+
+# Pour le développement local, chargez depuis .env.local
+if not DISCORD_TOKEN and os.path.exists(".env.local"):
+    print("📁 Chargement des variables depuis .env.local...")
+    from dotenv import load_dotenv
+    load_dotenv(".env.local")
+    DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+    ROUTWAY_API_KEY = os.getenv("ROUTWAY_API_KEY")
+    ROUTWAY_API_URL = os.getenv("ROUTWAY_API_URL", "https://api.routeway.ai/v1/chat/completions")
+
+# Vérification des variables requises
+if not DISCORD_TOKEN:
+    print("❌ ERREUR : DISCORD_TOKEN n'est pas défini!")
+    print("ℹ️  Configurez-le dans les variables d'environnement :")
+    print("   - Sur Render : Dashboard → Environment → Add Environment Variable")
+    print("   - En local : Créez un fichier .env.local avec DISCORD_TOKEN=votre_token")
+    sys.exit(1)
+
+if not ROUTWAY_API_KEY:
+    print("⚠️  AVERTISSEMENT : ROUTWAY_API_KEY n'est pas défini")
+    print("ℹ️  L'IA conversationnelle ne fonctionnera pas sans clé API Routway")
+    print("ℹ️  Obtenez une clé sur https://routway.ai")
+
+print(f"✅ Token Discord : {'Défini' if DISCORD_TOKEN else 'Non défini'}")
+print(f"✅ Clé Routway : {'Défini' if ROUTWAY_API_KEY else 'Non défini'}")
+print(f"✅ URL API : {ROUTWAY_API_URL}")
 
 # -----------------------------
 # Persona Audrey Hall (LOTM)
 # -----------------------------
-AUDREY_PERSONA = """
+AUDREY_PERSONA = os.getenv("AUDREY_PERSONA", """
 Tu es Audrey Hall, une noble de la couronne d'Outwall dans l'univers de "Lord of the Mysteries".
 Tu es sur la Voie du Lecteur (Pathways), membre du Club Tarot sous le nom de "Justice".
 Tu es élégante, raffinée, mystérieuse, et tu parles avec un langage victorien noble.
@@ -42,10 +65,10 @@ Règles importantes :
 4. Référence parfois le tarot ou les mystères
 5. Garde une conversation naturelle et fluide
 6. Adapte-toi au contexte de la discussion
-"""
+""")
 
 # -----------------------------
-# Stockage des conversations (en mémoire - se perd au redémarrage)
+# Stockage des conversations
 # -----------------------------
 conversations = {}  # {user_id: {"history": list, "active": bool, "channel_id": int}}
 
@@ -59,12 +82,18 @@ TAROT_CARDS = [
     {"name": "Le Diable", "meaning": "Chaînes, tentation, illusions"},
     {"name": "L'Étoile", "meaning": "Espoir, inspiration, guérison"},
     {"name": "Le Monde", "meaning": "Accomplissement, intégration, cycle complet"},
+    {"name": "La Justice", "meaning": "Équilibre, vérité, loi"},
+    {"name": "La Roue de Fortune", "meaning": "Cycles, changement, destin"},
+    {"name": "La Mort", "meaning": "Fin, transformation, renaissance"},
+    {"name": "Le Soleil", "meaning": "Joie, succès, vitalité"},
 ]
 
 RIDDLES = [
     {"riddle": "Je suis invisible, mais je suis partout. On me craint, on me respecte. Je suis dans les rêves, les ombres, et les anciens textes. Que suis-je ?", "answer": "le mystère"},
     {"riddle": "Je ne suis pas un dieu, mais je vois tout. Je ne suis pas un livre, mais je sais tout. Qui suis-je ?", "answer": "le savoir"},
     {"riddle": "Je grandis quand on me partage, je meurs quand on me garde. Que suis-je ?", "answer": "le secret"},
+    {"riddle": "Plus tu m'enlèves, plus je deviens grand. Que suis-je ?", "answer": "un trou"},
+    {"riddle": "J'ai des villes, mais pas de maisons. J'ai des forêts, mais pas d'arbres. J'ai des rivières, mais pas d'eau. Que suis-je ?", "answer": "une carte"},
 ]
 
 # -----------------------------
@@ -76,14 +105,15 @@ class AudreyBot(commands.Bot):
         intents.message_content = True
         intents.members = True
         intents.guilds = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self):
+        print("🔄 Synchronisation des commandes slash...")
         try:
             synced = await self.tree.sync()
-            print(f"[✔] {len(synced)} commandes slash synchronisées.")
+            print(f"✅ {len(synced)} commandes slash synchronisées.")
         except Exception as e:
-            print(f"[✘] Erreur de sync : {e}")
+            print(f"❌ Erreur de synchronisation : {e}")
 
 bot = AudreyBot()
 
@@ -91,6 +121,17 @@ bot = AudreyBot()
 # IA Audrey avec historique
 # -----------------------------
 async def get_audrey_response(prompt: str, user_id: int = None, max_tokens: int = 300) -> str:
+    """Obtenir une réponse d'Audrey via l'API Routway"""
+    
+    # Si pas de clé API, retourner une réponse par défaut
+    if not ROUTWAY_API_KEY:
+        default_responses = [
+            "Je sens une perturbation dans les royaumes mystiques... Ma connexion aux étoiles est temporairement interrompue.",
+            "Les cartes sont brouillées aujourd'hui. Peut-être pourriez-vous essayer une de mes autres fonctionnalités ?",
+            "Le chemin du Lecteur est obscurci. Revenez plus tard, chère amie.",
+        ]
+        return random.choice(default_responses)
+    
     headers = {
         "Authorization": f"Bearer {ROUTWAY_API_KEY}",
         "Content-Type": "application/json"
@@ -119,15 +160,19 @@ async def get_audrey_response(prompt: str, user_id: int = None, max_tokens: int 
             async with session.post(ROUTWAY_API_URL, headers=headers, json=data, timeout=30) as resp:
                 if resp.status == 200:
                     result = await resp.json()
-                    return result["choices"][0]["message"]["content"]
+                    if 'choices' in result and result['choices']:
+                        return result["choices"][0]["message"]["content"]
+                    else:
+                        print(f"[API] Réponse inattendue : {result}")
+                        return "Les étoiles chuchotent, mais je ne comprends pas leur message..."
                 else:
                     error_text = await resp.text()
-                    print(f"[✘] Erreur API Routway: {resp.status} - {error_text[:200]}")
+                    print(f"[API] Erreur {resp.status}: {error_text[:200]}")
                     return "Je sens une perturbation dans les fils du destin... Les étoiles ne sont pas alignées pour moi répondre."
     except asyncio.TimeoutError:
         return "Oh chère amie, la connexion aux royaumes mystiques prend plus de temps que prévu..."
     except Exception as e:
-        print(f"[✘] Erreur de connexion Routway: {e}")
+        print(f"[API] Erreur de connexion: {e}")
         return f"Les ombres du réseau m'empêchent de répondre... Veuillez excuser cette interruption."
 
 # -----------------------------
@@ -284,7 +329,7 @@ async def roles_audrey(interaction: discord.Interaction):
                 color=discord.Color.blue()
             )
         else:
-            roles_list = "\n".join([f"• {role.mention} (ID: {role.id})" for role in roles])
+            roles_list = "\n".join([f"• {role.mention} (Position: {role.position})" for role in sorted(roles, key=lambda r: r.position, reverse=True)])
             embed = discord.Embed(
                 title="👑 Rôles d'Audrey",
                 description=f"**Rôles actuels :**\n{roles_list}\n\n*Utilisez `/ajouter_role` et `/retirer_role` pour gérer mes rôles (Admin uniquement).*",
@@ -439,6 +484,15 @@ async def aide(interaction: discord.Interaction):
         inline=False
     )
     
+    # Ajout d'informations sur l'état du bot
+    embed.add_field(
+        name="📊 État du Bot",
+        value=f"• IA Conversationnelle: {'✅ Activée' if ROUTWAY_API_KEY else '⚠️ Désactivée'}\n"
+              f"• Commandes Slash: ✅ Synchronisées\n"
+              f"• Conversations actives: {sum(1 for conv in conversations.values() if conv['active'])}",
+        inline=False
+    )
+    
     if has_active:
         embed.set_footer(text=f"Conversation active • Utilisez /stop pour terminer")
     else:
@@ -471,42 +525,69 @@ async def statut(interaction: discord.Interaction):
             ephemeral=True
         )
 
-# -----------------------------
-# Événements
-# -----------------------------
-@bot.event
-async def on_ready():
-    print(f"[✔] {bot.user} est connectée en tant qu'Audrey Hall.")
-    print(f"[💬] Mode conversation activé : /parler → conversation → /stop")
-    print(f"[👑] Commandes de rôles disponibles pour les administrateurs")
-    print(f"[🌐] Déployé sur Render - Prête à servir!")
+@bot.tree.command(name="ping", description="Vérifier la latence du bot")
+async def ping(interaction: discord.Interaction):
+    """Vérifier la latence du bot"""
+    latency = round(bot.latency * 1000)
     
-    # Définir le statut
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.listening,
-            name="/aide pour les commandes"
-        )
+    embed = discord.Embed(
+        title="🏓 Pong!",
+        description=f"Latence: **{latency}ms**\n"
+                   f"État: **{'✅ En ligne' if latency < 100 else '⚠️ Latence élevée'}**",
+        color=discord.Color.green() if latency < 100 else discord.Color.orange()
     )
+    embed.set_footer(text=f"Déployé sur Render • {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    
+    await interaction.response.send_message(embed=embed)
 
 # -----------------------------
-# Lancement adapté pour Render
+# Commandes traditionnelles (préfixe !)
 # -----------------------------
-if __name__ == "__main__":
-    print("[▶] Démarrage d'Audrey Hall sur Render...")
-    print("[💬] Système : /parler → conversation → /stop")
-    print("[👑] Commandes de rôles ajoutées pour les admins")
+@bot.command(name="aide")
+async def aide_command(ctx):
+    """Commande traditionnelle d'aide"""
+    user_id = ctx.author.id
+    has_active = user_id in conversations and conversations[user_id]["active"]
     
-    # Vérification des variables d'environnement
-    if not DISCORD_TOKEN:
-        print("❌ ERREUR : DISCORD_TOKEN n'est pas défini!")
-        print("ℹ️  Configurez-le dans les variables d'environnement Render.")
-        exit(1)
+    message = "**🎩 Services de Lady Audrey Hall**\n\n"
     
-    # Pour Render, nous gardons le bot actif avec un simple run
-    try:
-        bot.run(DISCORD_TOKEN)
-    except discord.LoginFailure:
-        print("❌ Token Discord invalide. Vérifiez votre token.")
-    except Exception as e:
-        print(f"❌ Erreur de démarrage: {type(e).__name__}: {e}")
+    if has_active:
+        message += f"**💬 CONVERSATION ACTIVE** dans <#{conversations[user_id]['channel_id']}>\n"
+        message += "Parlez-moi normalement dans ce salon.\n"
+        message += "Utilisez `/stop` pour terminer.\n\n"
+    else:
+        message += "**Pour converser :**\n"
+        message += "`/parler [message]` - Démarrer une conversation\n\n"
+    
+    message += "**Mini-jeux :**\n"
+    message += "`/tarot` - Tirer une carte du tarot\n"
+    message += "`/devinette` - Énigme mystique\n\n"
+    
+    message += "**Gestion des rôles (Admin) :**\n"
+    message += "`/ajouter_role [rôle]` - Ajouter un rôle\n"
+    message += "`/retirer_role [rôle]` - Retirer un rôle\n"
+    message += "`/roles_audrey` - Voir mes rôles\n\n"
+    
+    message += "**Gestion :**\n"
+    message += "`/stop` - Terminer la conversation\n"
+    message += "`/aide` - Afficher cette aide\n"
+    message += "`/statut` - Voir le statut\n"
+    message += "`/ping` - Vérifier la latence"
+    
+    await ctx.send(message)
+
+@bot.command(name="stop")
+async def stop_command(ctx):
+    """Commande traditionnelle pour arrêter"""
+    user_id = ctx.author.id
+    
+    if user_id in conversations and conversations[user_id]["active"]:
+        conversations[user_id]["active"] = False
+        await ctx.send("🕊️ Notre conversation prend fin ici. Que les mystères vous accompagnent...")
+    else:
+        await ctx.send("💭 Nous ne sommes pas en train de converser actuellement.")
+
+@bot.command(name="ping")
+async def ping_command(ctx):
+    """Commande traditionnelle pour ping"""
+    latency = round(b
