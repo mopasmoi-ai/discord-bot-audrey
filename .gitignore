@@ -1,17 +1,44 @@
-# Environnement
-.env
+# Environnement Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environnement virtuel
 venv/
 env/
-__pycache__/
-*.pyc
+ENV/
+env.bak/
+venv.bak/
 
-# Base de données
-*.db
-*.sqlite3
+# Variables d'environnement
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Logs
-logs/
-*.log
+# Fichiers de cache
+.cache
+.pytest_cache/
+.mypy_cache/
 
 # IDE
 .vscode/
@@ -19,11 +46,18 @@ logs/
 *.swp
 *.swo
 
-# OS
+# Système
 .DS_Store
 Thumbs.db
 
-# Python
-*.egg-info/
-dist/
-build/
+# Logs
+logs/
+*.log
+
+# Render
+render.yaml
+render-build.log
+
+# Fichiers temporaires
+temp/
+tmp/
